@@ -118,7 +118,7 @@ func NewTemporalManager(
 	c client.Client,
 	taskQueue string,
 	taskHandler TaskActivationHandler,
-	completionHandler WorkflowCompletionHandler) Manager {
+	completionHandler WorkflowCompletionHandler) TemporalManager {
 	m := &temporalManagerImpl{
 		temporalClient: c,
 	}
