@@ -14,7 +14,7 @@ import (
 type TaskPayload struct {
 	WorkflowID string
 	RunID      string
-	ActivityID string
+	NodeID     string
 	TaskID     string
 	Inputs     map[string]any
 }
@@ -91,6 +91,7 @@ func (m *managerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initial
 // TaskDone is invoked by the external application to complete a dormant asynchronous Temporal Activity.
 func (m *managerImpl) TaskDone(ctx context.Context, workflowID, runID, activityID string, output map[string]any) error {
 	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, activityID, output, nil)
+	//			err := workflow.ExecuteActivity(ctx, "ExecuteTaskActivity", node.TaskID, instance.GlobalContext).Get(ctx, &result)
 }
 
 func (m *managerImpl) TaskUpdate(ctx context.Context, workflowID string, message string) error {

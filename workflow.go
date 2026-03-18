@@ -92,8 +92,15 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 		case NodeTypeTask:
 			var result map[string]any
 
-			// Suspend workflow until activity completes via external API
-			err := workflow.ExecuteActivity(ctx, "ExecuteTaskActivity", node.TaskID, instance.GlobalContext).Get(ctx, &result)
+			// 1. Create a specific context for this node to force the ActivityID
+			nodeActOpts := workflow.ActivityOptions{
+				ActivityID:          node.ID, // Forces Temporal to use your exact Node ID
+				StartToCloseTimeout: 24 * time.Hour * 365,
+			}
+			nodeCtx := workflow.WithActivityOptions(ctx, nodeActOpts)
+
+			// 2. Use nodeCtx instead of the generic ctx
+			err := workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskID, instance.GlobalContext).Get(ctx, &result)
 			if err != nil {
 				return err
 			}

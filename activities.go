@@ -16,7 +16,7 @@ func (a *EngineActivities) ExecuteTaskActivity(ctx context.Context, taskID strin
 	payload := TaskPayload{
 		WorkflowID: info.WorkflowExecution.ID,
 		RunID:      info.WorkflowExecution.RunID,
-		ActivityID: info.ActivityID,
+		NodeID:     info.ActivityID, // this is Node.ID which was passed in workflow.WithActivityOptions(ctx, nodeActOpts)
 		TaskID:     taskID,
 		Inputs:     inputs,
 	}
