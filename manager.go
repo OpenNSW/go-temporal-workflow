@@ -23,7 +23,7 @@ type TaskActivationHandler func(payload TaskPayload) error
 type WorkflowCompletionHandler func(workflowID string, finalContext map[string]any) error
 
 type Manager interface {
-	StartWorkflow(ctx context.Context, jsonDSL []byte, initialContext map[string]any) (string, error)
+	StartWorkflow(ctx context.Context, jsonDSL []byte, initialWorkflowVariables map[string]any) (string, error)
 	TaskDone(ctx context.Context, workflowID, runID, activityID string, output map[string]any) error
 	TaskUpdate(ctx context.Context, workflowID string, message string) error
 	GetStatus(ctx context.Context, workflowID string) (*WorkflowInstance, error)
@@ -68,7 +68,7 @@ func (m *managerImpl) GetWorkflowCompletionHandler() WorkflowCompletionHandler {
 	return m.workflowCompletionHandler
 }
 
-func (m *managerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initialContext map[string]any) (string, error) {
+func (m *managerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initialWorkflowVariables map[string]any) (string, error) {
 	var def WorkflowDefinition
 	if err := json.Unmarshal(jsonDSL, &def); err != nil {
 		return "", err
@@ -80,7 +80,7 @@ func (m *managerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initial
 		TaskQueue: "INTERPRETER_TASK_QUEUE",
 	}
 
-	we, err := m.temporalClient.ExecuteWorkflow(ctx, opts, "GraphInterpreterWorkflow", def, initialContext)
+	we, err := m.temporalClient.ExecuteWorkflow(ctx, opts, "GraphInterpreterWorkflow", def, initialWorkflowVariables)
 	if err != nil {
 		return "", err
 	}
@@ -89,9 +89,12 @@ func (m *managerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initial
 }
 
 // TaskDone is invoked by the external application to complete a dormant asynchronous Temporal Activity.
-func (m *managerImpl) TaskDone(ctx context.Context, workflowID, runID, activityID string, output map[string]any) error {
-	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, activityID, output, nil)
-	//			err := workflow.ExecuteActivity(ctx, "ExecuteTaskActivity", node.TaskID, instance.GlobalContext).Get(ctx, &result)
+// WorkflowID is the ID of the workflow
+// runID is the ID of the run
+// nodeID is the ID of the node
+// output is the key valye pairs that should be added to the global context
+func (m *managerImpl) TaskDone(ctx context.Context, workflowID, runID, nodeID string, output map[string]any) error {
+	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, nodeID, output, nil)
 }
 
 func (m *managerImpl) TaskUpdate(ctx context.Context, workflowID string, message string) error {

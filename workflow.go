@@ -8,14 +8,14 @@ import (
 )
 
 // GraphInterpreterWorkflow is the generic Temporal workflow that executes the JSON DAG.
-func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, initialContext map[string]any) (*WorkflowInstance, error) {
+func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, initialWorkflowVariables map[string]any) (*WorkflowInstance, error) {
 	// Initialize instance state
 	instance := &WorkflowInstance{
-		ID:            workflow.GetInfo(ctx).WorkflowExecution.ID,
-		Status:        StatusRunning,
-		GlobalContext: initialContext,
-		AuditTrail:    make([]string, 0),
-		EdgeTokens:    make(map[string]int),
+		ID:                workflow.GetInfo(ctx).WorkflowExecution.ID,
+		Status:            StatusRunning,
+		WorkflowVariables: initialWorkflowVariables,
+		AuditTrail:        make([]string, 0),
+		EdgeTokens:        make(map[string]int),
 	}
 
 	// Setup Query handler
@@ -100,7 +100,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 			nodeCtx := workflow.WithActivityOptions(ctx, nodeActOpts)
 
 			// 2. Use nodeCtx instead of the generic ctx
-			err := workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskID, instance.GlobalContext).Get(ctx, &result)
+			err := workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskID, instance.WorkflowVariables).Get(ctx, &result)
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 			if len(node.OutputMapping) > 0 && result != nil {
 				for taskKey, globalKey := range node.OutputMapping {
 					if val, exists := result[taskKey]; exists {
-						instance.GlobalContext[globalKey] = val
+						instance.WorkflowVariables[globalKey] = val
 					}
 				}
 			}
@@ -125,7 +125,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 			case GatewayTypeExclusiveSplit:
 				// Pick the FIRST condition that matches
 				for _, e := range outEdges {
-					match, err := EvaluateCondition(e.Condition, instance.GlobalContext)
+					match, err := EvaluateCondition(e.Condition, instance.WorkflowVariables)
 					if err != nil {
 						return err
 					}
@@ -139,7 +139,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 				// Spawn a coroutine for EVERY matching condition
 				var futures []workflow.Future
 				for _, e := range outEdges {
-					match, err := EvaluateCondition(e.Condition, instance.GlobalContext)
+					match, err := EvaluateCondition(e.Condition, instance.WorkflowVariables)
 					if err != nil {
 						return err
 					}
@@ -201,7 +201,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 			}
 
 		case NodeTypeEnd:
-			return workflow.ExecuteActivity(ctx, "WorkflowCompletedActivity", instance.ID, instance.GlobalContext).Get(ctx, nil)
+			return workflow.ExecuteActivity(ctx, "WorkflowCompletedActivity", instance.ID, instance.WorkflowVariables).Get(ctx, nil)
 		}
 
 		return nil

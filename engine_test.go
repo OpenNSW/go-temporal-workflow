@@ -74,7 +74,7 @@ func TestCustomsExportLCLFlow(t *testing.T) {
 	err := json.Unmarshal([]byte(customsWorkflowJSON), &def)
 	require.NoError(t, err)
 
-	initialContext := make(map[string]any)
+	initialWorkflowVariables := make(map[string]any)
 	emptyMap := map[string]any{}
 
 	acts := &EngineActivities{}
@@ -105,7 +105,7 @@ func TestCustomsExportLCLFlow(t *testing.T) {
 	env.OnActivity("WorkflowCompletedActivity", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).Once()
 
-	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialContext)
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -114,7 +114,7 @@ func TestCustomsExportLCLFlow(t *testing.T) {
 	err = env.GetWorkflowResult(&instance)
 	require.NoError(t, err)
 	require.Equal(t, StatusCompleted, instance.Status)
-	require.Equal(t, "LCL", instance.GlobalContext["consignment_type"])
+	require.Equal(t, "LCL", instance.WorkflowVariables["consignment_type"])
 
 	env.AssertExpectations(t)
 }
@@ -127,7 +127,7 @@ func TestParallelJoinFlow(t *testing.T) {
 	err := json.Unmarshal([]byte(parallelWorkflowJSON), &def)
 	require.NoError(t, err)
 
-	initialContext := make(map[string]any)
+	initialWorkflowVariables := make(map[string]any)
 	emptyMap := map[string]any{}
 
 	acts := &EngineActivities{}
@@ -147,7 +147,7 @@ func TestParallelJoinFlow(t *testing.T) {
 	env.OnActivity("WorkflowCompletedActivity", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).Once()
 
-	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialContext)
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
