@@ -93,19 +93,20 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 	}
 
 	executeNode = func(ctx workflow.Context, nodeID string) error {
-		node := getNodeByID(nodeID)
-		if node == nil {
-			return fmt.Errorf("node %s not found", nodeID)
-		}
-
-		outEdges := getOutgoingEdges(node.ID)
-
 		nodeInfo, ok := instance.NodeInfo[nodeID]
 		if !ok {
 			return fmt.Errorf("NodeInfo for node %s not found", nodeID)
 		}
 		nodeInfo.Status = NodeStatusRunning
 		nodeInfo.UpdatedAt = time.Now()
+
+		node := getNodeByID(nodeID)
+		if node == nil {
+			nodeInfo.Status = NodeStatusFailed
+			return fmt.Errorf("node %s not found", nodeID)
+		}
+
+		outEdges := getOutgoingEdges(node.ID)
 
 		switch node.Type {
 		case NodeTypeStart:
@@ -162,6 +163,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 						return transitionTo(ctx, e)
 					}
 				}
+				nodeInfo.Status = NodeStatusFailed
 				return fmt.Errorf("no matching conditions found at exclusive gateway %s", node.ID)
 
 			case GatewayTypeParallelSplit:
