@@ -3,8 +3,8 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
-	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -76,10 +76,10 @@ type WorkflowCompletionHandler func(workflowID string, finalWorkflowVariables ma
 // execution engine. It handles workflow lifecycles, external task routing,
 // and state queries.
 type Manager interface {
-	// StartWorkflow parses the provided JSON DAG definition and starts the defined workflow.
-	// initialWorkflowVariables sets the starting state for the graph's data payload.
-	// Returns the newly generated Workflow ID, or an error if submission fails.
-	StartWorkflow(ctx context.Context, jsonDSL []byte, initialWorkflowVariables map[string]any) (string, error)
+	// StartWorkflow starts a workflow using the provided ID. It parses the provided JSON DAG definition
+	// and starts the defined workflow. initialWorkflowVariables sets the starting state for the graph's
+	// data payload. Returns an error if submission fails.
+	StartWorkflow(ctx context.Context, ID string, jsonDSL []byte, initialWorkflowVariables map[string]any) error
 
 	// TaskDone is called by the external system to resume a paused workflow node.
 	// It routes the output data back into the specific workflow's WorkflowVariables using the provided
@@ -135,24 +135,23 @@ func NewTemporalManager(
 	return m
 }
 
-func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, jsonDSL []byte, initialWorkflowVariables map[string]any) (string, error) {
+func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, jsonDSL []byte, initialWorkflowVariables map[string]any) error {
 	var def WorkflowDefinition
 	if err := json.Unmarshal(jsonDSL, &def); err != nil {
-		return "", err
+		return fmt.Errorf("failed to unmarshal workflow definition: %w", err)
 	}
 
-	workflowID := "workflow-" + uuid.NewString()
 	opts := client.StartWorkflowOptions{
-		ID:        workflowID,
+		ID:        ID,
 		TaskQueue: "INTERPRETER_TASK_QUEUE",
 	}
 
-	we, err := m.temporalClient.ExecuteWorkflow(ctx, opts, "GraphInterpreterWorkflow", def, initialWorkflowVariables)
+	_, err := m.temporalClient.ExecuteWorkflow(ctx, opts, "GraphInterpreterWorkflow", def, initialWorkflowVariables)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("failed to execute workflow: %w", err)
 	}
 
-	return we.GetID(), nil
+	return nil
 }
 
 // TaskDone is invoked by the external application to complete a dormant asynchronous Temporal Activity.
