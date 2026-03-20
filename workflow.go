@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -35,7 +36,8 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 
 	for _, node := range def.Nodes {
 		instance.NodeInfo[node.ID] = &NodeInfo{
-			ID:             node.ID,
+			// Create a unique ID for the node. node.ID is the ID in our template.
+			ID:             node.ID + ":" + uuid.NewString(),
 			Type:           node.Type,
 			GatewayType:    node.GatewayType,
 			TaskTemplateID: node.TaskTemplateID,
@@ -133,7 +135,7 @@ func (g *graphInterpreter) executeNode(ctx workflow.Context, nodeID string) erro
 	case NodeTypeStart:
 		err = g.handleStartNode(ctx, outEdges)
 	case NodeTypeTask:
-		err = g.handleTaskNode(ctx, node, outEdges)
+		err = g.handleTaskNode(ctx, nodeInfo.ID, node, outEdges)
 	case NodeTypeGateway:
 		err = g.handleGatewayNode(ctx, node, outEdges)
 	case NodeTypeEnd:
@@ -160,11 +162,12 @@ func (g *graphInterpreter) handleStartNode(ctx workflow.Context, outEdges []Edge
 	return g.transitionTo(ctx, outEdges[0])
 }
 
-func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, node *Node, outEdges []Edge) error {
+func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeID string, node *Node, outEdges []Edge) error {
 	nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ActivityID:          node.ID,
+		ActivityID:          nodeID,
 		StartToCloseTimeout: 24 * time.Hour * 365,
 	})
+	slog.Error("DEBUG ----- ActivityID:          node.ID", "node.ID", node.ID, "nodeID", nodeID)
 
 	var result map[string]any
 	err := workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, g.instance.WorkflowVariables).Get(ctx, &result)

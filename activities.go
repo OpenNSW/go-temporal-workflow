@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 
 	"go.temporal.io/sdk/activity"
 )
@@ -21,6 +22,8 @@ func (a *EngineActivities) ExecuteTaskActivity(ctx context.Context, taskTemplate
 		TaskTemplateID: taskTemplateID,
 		Inputs:         inputs,
 	}
+
+	slog.Error("ExecuteTaskActivity", "payload", payload)
 
 	// Trigger custom code block
 	err := a.ExecuteTaskActivityHandler(payload)
