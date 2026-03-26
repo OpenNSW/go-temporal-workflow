@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -98,10 +97,11 @@ type WorkflowCompletionHandler func(workflowID string, finalWorkflowVariables ma
 // execution engine. It handles workflow lifecycles, external task routing,
 // and state queries.
 type Manager interface {
-	// StartWorkflow starts a workflow using the provided ID. It parses the provided JSON DAG definition
-	// and starts the defined workflow. initialWorkflowVariables sets the starting state for the graph's
+	// StartWorkflow starts a workflow using the provided ID.
+	// The WorkflowDefinition defines the structure of the workflow graph (nodes and edges).
+	// initialWorkflowVariables sets the starting state for the graph's
 	// data payload. Returns an error if submission fails.
-	StartWorkflow(ctx context.Context, ID string, jsonDSL []byte, initialWorkflowVariables map[string]any) error
+	StartWorkflow(ctx context.Context, ID string, def WorkflowDefinition, initialWorkflowVariables map[string]any) error
 
 	// TaskDone is called by the external system to resume a paused workflow node.
 	// It routes the output data back into the specific workflow's WorkflowVariables using the provided
@@ -157,12 +157,7 @@ func NewTemporalManager(
 	return m
 }
 
-func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, jsonDSL []byte, initialWorkflowVariables map[string]any) error {
-	var def WorkflowDefinition
-	if err := json.Unmarshal(jsonDSL, &def); err != nil {
-		return fmt.Errorf("failed to unmarshal workflow definition: %w", err)
-	}
-
+func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, def WorkflowDefinition, initialWorkflowVariables map[string]any) error {
 	opts := client.StartWorkflowOptions{
 		ID:        ID,
 		TaskQueue: "INTERPRETER_TASK_QUEUE",

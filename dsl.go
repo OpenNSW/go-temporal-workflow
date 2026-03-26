@@ -37,11 +37,25 @@ type Edge struct {
 	Condition string `json:"condition,omitempty"` // Expression mapped against WorkflowVariables
 }
 
-// WorkflowDefinition is the parsed structural definition of the JSON DSL.
+// WorkflowDefinition represents the structural blueprint of a workflow process.
+// It serves as the parsed representation of the JSON DSL, defining how nodes
+// and edges form a directed graph for the execution engine.
 type WorkflowDefinition struct {
-	WorkflowID string `json:"workflow_id"`
-	Name       string `json:"name"`
-	Version    int    `json:"version"`
-	Nodes      []Node `json:"nodes"`
-	Edges      []Edge `json:"edges"`
+	// ID is the unique identifier for this specific workflow template.
+	ID string `json:"id"`
+
+	// Name is a human-readable label used for display and organizational purposes.
+	Name string `json:"name"`
+
+	// Version tracks iterations of the workflow logic, allowing for side-by-side
+	// deployment of different logic versions.
+	Version int `json:"version"`
+
+	// Nodes defines the individual steps, gateways, and boundary events
+	// that make up the workflow.
+	Nodes []Node `json:"nodes"`
+
+	// Edges defines the directed connections between nodes, including
+	// any conditional logic required for branching.
+	Edges []Edge `json:"edges"`
 }
