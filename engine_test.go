@@ -66,6 +66,72 @@ const parallelWorkflowJSON = `
   ]
 }`
 
+const inputMappingWorkflowJSON = `
+{
+	"workflow_id": "input-mapping-test",
+	"name": "Input Mapping Test",
+	"version": 1,
+	"edges":[
+		{ "id": "e1", "source_id": "start", "target_id": "task" },
+		{ "id": "e2", "source_id": "task", "target_id": "end" }
+	],
+	"nodes":[
+		{ "id": "start", "type": "START" },
+		{ "id": "task", "type": "TASK", "task_template_id": "TASK_INPUTS", "input_mapping": { "global_user_email": "local_email" } },
+		{ "id": "end", "type": "END" }
+	]
+}`
+
+const missingInputMappingKeyWorkflowJSON = `
+{
+	"workflow_id": "missing-input-key-test",
+	"name": "Missing Input Mapping Key Test",
+	"version": 1,
+	"edges":[
+		{ "id": "e1", "source_id": "start", "target_id": "task" },
+		{ "id": "e2", "source_id": "task", "target_id": "end" }
+	],
+	"nodes":[
+		{ "id": "start", "type": "START" },
+		{ "id": "task", "type": "TASK", "task_template_id": "TASK_WITH_MISSING_INPUT", "input_mapping": { "missing_global_var": "local_key" } },
+		{ "id": "end", "type": "END" }
+	]
+}`
+
+const emptyInputMappingWorkflowJSON = `
+{
+	"workflow_id": "empty-input-mapping-test",
+	"name": "Empty Input Mapping Test",
+	"version": 1,
+	"edges":[
+		{ "id": "e1", "source_id": "start", "target_id": "task" },
+		{ "id": "e2", "source_id": "task", "target_id": "end" }
+	],
+	"nodes":[
+		{ "id": "start", "type": "START" },
+		{ "id": "task", "type": "TASK", "task_template_id": "TASK_EMPTY_INPUTS" },
+		{ "id": "end", "type": "END" }
+	]
+}`
+
+const nodeOutputToSubsetInputWorkflowJSON = `
+{
+	"workflow_id": "subset-input-mapping-test",
+	"name": "Subset Input Mapping Test",
+	"version": 1,
+	"edges":[
+		{ "id": "e1", "source_id": "start", "target_id": "node1" },
+		{ "id": "e2", "source_id": "node1", "target_id": "node2" },
+		{ "id": "e3", "source_id": "node2", "target_id": "end" }
+	],
+	"nodes":[
+		{ "id": "start", "type": "START" },
+		{ "id": "node1", "type": "TASK", "task_template_id": "NODE1_TASK", "output_mapping": { "task_email": "global_user_email", "task_phone": "global_user_phone" } },
+		{ "id": "node2", "type": "TASK", "task_template_id": "NODE2_TASK", "input_mapping": { "global_user_email": "local_email" } },
+		{ "id": "end", "type": "END" }
+	]
+}`
+
 func TestCustomsExportLCLFlow(t *testing.T) {
 	testSuite := &testsuite.WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
@@ -157,6 +223,139 @@ func TestParallelJoinFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, StatusCompleted, instance.Status)
+
+	env.AssertExpectations(t)
+}
+
+func TestTaskNodeAppliesInputMapping(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	var def WorkflowDefinition
+	err := json.Unmarshal([]byte(inputMappingWorkflowJSON), &def)
+	require.NoError(t, err)
+
+	initialWorkflowVariables := map[string]any{
+		"global_user_email": "user@example.com",
+		"global_user_name":  "Alice",
+	}
+
+	acts := &EngineActivities{}
+	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
+	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+
+	env.OnActivity("ExecuteTaskActivity", mock.Anything, "TASK_INPUTS", mock.MatchedBy(func(inputs map[string]any) bool {
+		if len(inputs) != 1 {
+			return false
+		}
+		value, exists := inputs["local_email"]
+		return exists && value == "user@example.com"
+	})).Return(map[string]any{}, nil).Once()
+
+	env.OnActivity("WorkflowCompletedActivity", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Once()
+
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestTaskNodeWithEmptyInputMappingPassesNoInputs(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	var def WorkflowDefinition
+	err := json.Unmarshal([]byte(emptyInputMappingWorkflowJSON), &def)
+	require.NoError(t, err)
+
+	initialWorkflowVariables := map[string]any{
+		"global_user_email": "user@example.com",
+		"global_user_name":  "Alice",
+	}
+
+	acts := &EngineActivities{}
+	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
+	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+
+	env.OnActivity("ExecuteTaskActivity", mock.Anything, "TASK_EMPTY_INPUTS", mock.MatchedBy(func(inputs map[string]any) bool {
+		return len(inputs) == 0
+	})).Return(map[string]any{}, nil).Once()
+
+	env.OnActivity("WorkflowCompletedActivity", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Once()
+
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestTaskNodeFailsWhenInputKeyMissing(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	var def WorkflowDefinition
+	err := json.Unmarshal([]byte(missingInputMappingKeyWorkflowJSON), &def)
+	require.NoError(t, err)
+
+	initialWorkflowVariables := map[string]any{
+		"global_user_email": "user@example.com",
+	}
+
+	acts := &EngineActivities{}
+	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
+	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	require.Contains(t, env.GetWorkflowError().Error(), "input mapping error")
+	require.Contains(t, env.GetWorkflowError().Error(), "missing_global_var")
+}
+
+func TestNodeOutputFlowsIntoSubsetInputMapping(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	var def WorkflowDefinition
+	err := json.Unmarshal([]byte(nodeOutputToSubsetInputWorkflowJSON), &def)
+	require.NoError(t, err)
+
+	acts := &EngineActivities{}
+	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
+	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+
+	env.OnActivity("ExecuteTaskActivity", mock.Anything, "NODE1_TASK", mock.Anything).
+		Return(map[string]any{
+			"task_email": "user@example.com",
+			"task_phone": "+123456789",
+		}, nil).Once()
+
+	env.OnActivity("ExecuteTaskActivity", mock.Anything, "NODE2_TASK", mock.MatchedBy(func(inputs map[string]any) bool {
+		if len(inputs) != 1 {
+			return false
+		}
+		value, exists := inputs["local_email"]
+		return exists && value == "user@example.com"
+	})).Return(map[string]any{}, nil).Once()
+
+	env.OnActivity("WorkflowCompletedActivity", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Once()
+
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, map[string]any{})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var instance WorkflowInstance
+	err = env.GetWorkflowResult(&instance)
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", instance.WorkflowVariables["global_user_email"])
+	require.Equal(t, "+123456789", instance.WorkflowVariables["global_user_phone"])
 
 	env.AssertExpectations(t)
 }

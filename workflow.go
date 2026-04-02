@@ -201,14 +201,36 @@ func (g *graphInterpreter) handleEndNode(ctx workflow.Context, nodeInfo *NodeInf
 	return nil
 }
 
+func (g *graphInterpreter) mapTaskInputs(inputMapping map[string]string) (map[string]any, error) {
+	inputs := make(map[string]any, len(inputMapping))
+	if len(inputMapping) == 0 {
+		return inputs, nil
+	}
+
+	for globalKey, localKey := range inputMapping {
+		val, exists := g.instance.WorkflowVariables[globalKey]
+		if !exists {
+			return nil, fmt.Errorf("input mapping error: required global variable '%s' not found in workflow variables for task node", globalKey)
+		}
+		inputs[localKey] = val
+	}
+
+	return inputs, nil
+}
+
 func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeInfo, node *Node, outEdges []Edge) error {
 	nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		ActivityID:          nodeInfo.ID,
 		StartToCloseTimeout: 24 * time.Hour * 365,
 	})
 
+	inputs, err := g.mapTaskInputs(node.InputMapping)
+	if err != nil {
+		return err
+	}
+
 	var result map[string]any
-	err := workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, g.instance.WorkflowVariables).Get(ctx, &result)
+	err = workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, inputs).Get(ctx, &result)
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,7 @@ type Node struct {
 	Type           NodeType          `json:"type"`                       // START, END, TASK, or GATEWAY
 	GatewayType    GatewayType       `json:"gateway_type,omitempty"`     // See Gateway Types constants
 	TaskTemplateID string            `json:"task_template_id,omitempty"` // Identifier for the task template to run
+	InputMapping   map[string]string `json:"input_mapping,omitempty"`    // Maps WorkflowVariables Key -> Task Input Key
 	OutputMapping  map[string]string `json:"output_mapping,omitempty"`   // Maps Task Output Key -> WorkflowVariables Key
 }
 
