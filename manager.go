@@ -136,6 +136,7 @@ type TemporalManager interface {
 type temporalManagerImpl struct {
 	temporalClient client.Client
 	worker         worker.Worker
+	taskQueue      string
 }
 
 func NewTemporalManager(
@@ -145,6 +146,7 @@ func NewTemporalManager(
 	completionHandler WorkflowCompletionHandler) TemporalManager {
 	m := &temporalManagerImpl{
 		temporalClient: c,
+		taskQueue:      taskQueue,
 	}
 
 	w := worker.New(c, taskQueue, worker.Options{})
@@ -162,7 +164,7 @@ func NewTemporalManager(
 func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, def WorkflowDefinition, initialWorkflowVariables map[string]any) error {
 	opts := client.StartWorkflowOptions{
 		ID:        ID,
-		TaskQueue: "INTERPRETER_TASK_QUEUE",
+		TaskQueue: m.taskQueue,
 	}
 
 	_, err := m.temporalClient.ExecuteWorkflow(ctx, opts, "GraphInterpreterWorkflow", def, initialWorkflowVariables)
