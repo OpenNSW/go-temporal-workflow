@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -9,6 +10,16 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 )
+
+func TestNewTemporalManagerPanicsWithEmptyTaskQueue(t *testing.T) {
+	for _, taskQueue := range []string{"", "   "} {
+		t.Run(fmt.Sprintf("%q", taskQueue), func(t *testing.T) {
+			require.PanicsWithValue(t, "taskQueue must not be empty", func() {
+				NewTemporalManager(nil, taskQueue, nil, nil)
+			})
+		})
+	}
+}
 
 const customsWorkflowJSON = `
 {

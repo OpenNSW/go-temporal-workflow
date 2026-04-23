@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -144,6 +145,10 @@ func NewTemporalManager(
 	taskQueue string,
 	taskHandler TaskActivationHandler,
 	completionHandler WorkflowCompletionHandler) TemporalManager {
+	if strings.TrimSpace(taskQueue) == "" {
+		panic("taskQueue must not be empty")
+	}
+
 	m := &temporalManagerImpl{
 		temporalClient: c,
 		taskQueue:      taskQueue,
