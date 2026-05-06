@@ -41,7 +41,9 @@ func TestGetNestedKey(t *testing.T) {
 		if ok != test.expectedOk {
 			t.Errorf("getNestedKey(%q): ok = %v, want %v", test.dotPath, ok, test.expectedOk)
 		}
-		if ok && got != test.expected {
+		// Bug fix: use reflect.DeepEqual instead of != so that map values
+		// (like the "userform.address" case) are compared correctly.
+		if ok && !reflect.DeepEqual(got, test.expected) {
 			t.Errorf("getNestedKey(%q): got %v, want %v", test.dotPath, got, test.expected)
 		}
 	}
@@ -117,7 +119,7 @@ func TestSetNestedKey(t *testing.T) {
 		for k, v := range test.expected {
 			if got, ok := m[k]; !ok {
 				t.Errorf("setNestedKey(%q): key %q not found", test.dotPath, k)
-			} else if got != v {
+			} else if !reflect.DeepEqual(got, v) {
 				t.Errorf("setNestedKey(%q): value for key %q: got %v, want %v",
 					test.dotPath, k, got, v)
 			}
