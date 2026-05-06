@@ -218,7 +218,7 @@ func (g *graphInterpreter) mapTaskInputs(inputMapping map[string]string) (map[st
 	return inputs, nil
 }
 
-func (g *graphInterpreter) mapTaskOutputs(outputMapping map[string]string, result map[string]any) error {
+func (g *graphInterpreter) mapTaskOutputs(workflowVars map[string]any, outputMapping map[string]string, result map[string]any) error {
 	if len(outputMapping) == 0 || result == nil {
 		return nil
 	}
@@ -228,7 +228,7 @@ func (g *graphInterpreter) mapTaskOutputs(outputMapping map[string]string, resul
 		if !exists {
 			return fmt.Errorf("output mapping error: required task variable '%s' not found in task result", taskKey)
 		}
-		setNestedKey(g.instance.WorkflowVariables, globalKey, val)
+		setNestedKey(workflowVars, globalKey, val)
 	}
 	return nil
 }
@@ -250,7 +250,7 @@ func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeIn
 		return err
 	}
 
-	err = g.mapTaskOutputs(node.OutputMapping, result)
+	err = g.mapTaskOutputs(g.instance.WorkflowVariables, node.OutputMapping, result)
 	if err != nil {
 		return err
 	}
