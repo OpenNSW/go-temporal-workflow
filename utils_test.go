@@ -33,7 +33,6 @@ func TestGetNestedKey(t *testing.T) {
 		{"userform.address.state", nil, false},
 		{"userform.address", map[string]any{"city": "Sydney"}, true},
 		{"", nil, false},
-		{dotPath: "", expected: nil, expectedOk: false},
 	}
 
 	for _, test := range tests {

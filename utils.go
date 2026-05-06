@@ -33,7 +33,7 @@ func getNestedKey(m map[string]any, dotPath string) (any, bool) {
 // setNestedKey sets a value in a map using a dot-separated path.
 // e.g. setNestedKey(m, "userform.applicant_name", "Acme") sets m["userform"]["applicant_name"] = "Acme"
 func setNestedKey(m map[string]any, dotPath string, value any) {
-	if dotPath == "" {
+	if m == nil || dotPath == "" {
 		return
 	}
 	// Find the first dot
