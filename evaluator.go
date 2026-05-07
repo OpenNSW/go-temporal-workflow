@@ -9,7 +9,7 @@ func EvaluateCondition(condition string, context map[string]any) (bool, error) {
 		return true, nil
 	}
 
-	program, err := expr.Compile(condition, expr.Env(context), expr.AsBool(), expr.AllowUndefinedVariables())
+	program, err := expr.Compile(condition, expr.Env(context), expr.AsBool())
 	if err != nil {
 		return false, err
 	}
