@@ -87,10 +87,18 @@ type UpdateEvent struct {
 }
 
 // TaskActivationHandler is invoked by the engine whenever the workflow reaches a "Task" node.
-// The implementation should trigger the external system (e.g., via HTTP, Kafka, or DB insert)
-// and must return quickly. The workflow node will then pause asynchronously
-// until the host application calls Manager.TaskDone() with the matching IDs.
-type TaskActivationHandler func(payload TaskPayload) error
+// The handler must support two execution paths:
+//
+// 1. Synchronous Execution:
+//    - If the work completes immediately, return a nil error and a map containing the output variables.
+//    - The workflow immediately consumes these outputs and proceeds to the next node.
+//
+// 2. Asynchronous Execution:
+//    - If the work is long-running (e.g. awaits external API callback, human UI interaction, etc.),
+//      return a nil map and an ErrResultPending error.
+//    - The workflow activity pauses and awaits completion. The host application must eventually resume
+//      it by calling Manager.TaskDone() with the matching workflow, run, and node IDs.
+type TaskActivationHandler func(payload TaskPayload) (map[string]any, error)
 
 // WorkflowCompletionHandler is invoked when the generic DAG workflow successfully reaches an "End" node,
 // providing the final, accumulated state of the workflow variables.
