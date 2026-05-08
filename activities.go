@@ -7,12 +7,22 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
+// EngineActivities encapsulates the Temporal activity implementations utilized by the workflow engine.
+// It maps the activity execution flow to custom callback handlers provided by the host application.
 type EngineActivities struct {
-	ExecuteTaskActivityHandler       func(TaskPayload) error
+	// ExecuteTaskActivityHandler is invoked when the workflow engine encounters a task node.
+	// - For synchronous execution, it should return a nil error with a map containing the results.
+	// - For asynchronous execution, it should return a nil map and an ErrResultPending error,
+	//   which pauses the workflow activity until an external handler triggers TaskDone.
+	ExecuteTaskActivityHandler       func(TaskPayload) (map[string]any, error)
+
+	// WorkflowCompletedActivityHandler is invoked when the overall workflow execution succeeds and reaches
+	// an End node. It receives the workflow ID and the final accumulated workflow variables, allowing the
+	// host application to run any necessary completion triggers, notify listeners, or persist final state.
 	WorkflowCompletedActivityHandler func(string, map[string]any) error
 }
 
-// ExecuteTaskActivity pushes the task to your application and sleeps waiting for it
+// ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
 func (a *EngineActivities) ExecuteTaskActivity(ctx context.Context, taskTemplateID string, inputs map[string]any) (map[string]any, error) {
 	info := activity.GetInfo(ctx)
 	payload := TaskPayload{
@@ -25,14 +35,15 @@ func (a *EngineActivities) ExecuteTaskActivity(ctx context.Context, taskTemplate
 
 	slog.Error("ExecuteTaskActivity", "payload", payload)
 
-	// Trigger custom code block
-	err := a.ExecuteTaskActivityHandler(payload)
+	// Trigger custom code block. ExecuteTaskActivityHandler can return error ErrResultPending to pause the workflow
+	// or return a nil error with the outputs for the next step to consume (synchronous execution)
+	res, err := a.ExecuteTaskActivityHandler(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	// Return ErrResultPending to put Workflow Coroutine to sleep
-	return nil, activity.ErrResultPending
+	// Return result immediately for synchronous steps
+	return res, nil
 }
 
 func (a *EngineActivities) WorkflowCompletedActivity(ctx context.Context, workflowID string, finalContext map[string]any) error {
