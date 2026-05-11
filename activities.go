@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"go.temporal.io/sdk/activity"
@@ -10,10 +11,10 @@ import (
 // EngineActivities encapsulates the Temporal activity implementations utilized by the workflow engine.
 // It maps the activity execution flow to custom callback handlers provided by the host application.
 type EngineActivities struct {
-	// ExecuteTaskActivityHandler is invoked when the workflow engine encounters a task node.
-	// - For synchronous execution, it should return a nil error with a map containing the results.
-	// - For asynchronous execution, it should return a nil map and an ErrResultPending error,
-	//   which pauses the workflow activity until an external handler triggers TaskDone.
+	// ExecuteTaskActivityHandler is invoked when the workflow engine reaches a task node.
+	// Use it to notify the host application (persist, enqueue, send event, etc.).
+	// The workflow always pauses after this call; completion requires Manager.TaskDone.
+	// Return a non-nil error only to fail the task immediately (e.g. notification failed).
 	ExecuteTaskActivityHandler       func(TaskPayload) (map[string]any, error)
 
 	// WorkflowCompletedActivityHandler is invoked when the overall workflow execution succeeds and reaches
@@ -22,28 +23,28 @@ type EngineActivities struct {
 	WorkflowCompletedActivityHandler func(string, map[string]any) error
 }
 
-// ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
+// ExecuteTaskActivity notifies the host application that a task node has been reached,
+// then unconditionally pauses. The activity only completes when the host calls Manager.TaskDone,
+// which delivers the result via Temporal's CompleteActivityByID.
 func (a *EngineActivities) ExecuteTaskActivity(ctx context.Context, taskTemplateID string, inputs map[string]any) (map[string]any, error) {
 	info := activity.GetInfo(ctx)
 	payload := TaskPayload{
 		WorkflowID:     info.WorkflowExecution.ID,
 		RunID:          info.WorkflowExecution.RunID,
-		NodeID:         info.ActivityID, // this is Node.ID which was passed in workflow.WithActivityOptions(ctx, nodeActOpts)
+		NodeID:         info.ActivityID,
 		TaskTemplateID: taskTemplateID,
 		Inputs:         inputs,
 	}
 
-	slog.Error("ExecuteTaskActivity", "payload", payload)
+	slog.Info("ExecuteTaskActivity", "payload", payload)
 
-	// Trigger custom code block. ExecuteTaskActivityHandler can return error ErrResultPending to pause the workflow
-	// or return a nil error with the outputs for the next step to consume (synchronous execution)
-	res, err := a.ExecuteTaskActivityHandler(payload)
-	if err != nil {
+	_, err := a.ExecuteTaskActivityHandler(payload)
+	if err != nil && !errors.Is(err, activity.ErrResultPending) {
 		return nil, err
 	}
 
-	// Return result immediately for synchronous steps
-	return res, nil
+	// Always pause — TaskDone (CompleteActivityByID) is the only path to completion.
+	return nil, activity.ErrResultPending
 }
 
 func (a *EngineActivities) WorkflowCompletedActivity(ctx context.Context, workflowID string, finalContext map[string]any) error {

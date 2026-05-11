@@ -87,17 +87,12 @@ type UpdateEvent struct {
 }
 
 // TaskActivationHandler is invoked by the engine whenever the workflow reaches a "Task" node.
-// The handler must support two execution paths:
+// Its purpose is to notify the host application that a task is ready (e.g. persist it, send an
+// event, enqueue work). The workflow always pauses after this call regardless of the return value;
+// it only advances when the host calls Manager.TaskDone with the matching IDs.
 //
-// 1. Synchronous Execution:
-//    - If the work completes immediately, return a nil error and a map containing the output variables.
-//    - The workflow immediately consumes these outputs and proceeds to the next node.
-//
-// 2. Asynchronous Execution:
-//    - If the work is long-running (e.g. awaits external API callback, human UI interaction, etc.),
-//      return a nil map and an ErrResultPending error.
-//    - The workflow activity pauses and awaits completion. The host application must eventually resume
-//      it by calling Manager.TaskDone() with the matching workflow, run, and node IDs.
+// Return a non-nil error to fail the task node immediately (e.g. the notification could not be
+// delivered). The return map is ignored — outputs are delivered exclusively through TaskDone.
 type TaskActivationHandler func(payload TaskPayload) (map[string]any, error)
 
 // WorkflowCompletionHandler is invoked when the generic DAG workflow successfully reaches an "End" node,

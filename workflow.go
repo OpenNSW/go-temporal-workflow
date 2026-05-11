@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,9 +91,15 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 	signalChan := workflow.GetSignalChannel(ctx, "TaskUpdateSignal")
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		for {
-			var updateEvent UpdateEvent
-			signalChan.Receive(ctx, &updateEvent)
-			// TODO: implement event handling
+			var event UpdateEvent
+			signalChan.Receive(ctx, &event)
+
+			entry := fmt.Sprintf("[%s] node=%s type=%s",
+				workflow.Now(ctx).Format(time.RFC3339), event.NodeID, event.EventType)
+			instance.AuditTrail = append(instance.AuditTrail, entry)
+
+			slog.Debug("TaskUpdateSignal received",
+				"nodeID", event.NodeID, "eventType", event.EventType, "payload", event.Payload)
 		}
 	})
 
