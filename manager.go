@@ -30,9 +30,14 @@ type TaskPayload struct {
 	WorkflowID string
 	// RunID is the unique identifier for this specific execution attempt.
 	RunID string
-	// NodeID is the ID of the graph node currently being executed.
+	// NodeID is the opaque execution token for this task. For standard nodes it is
+	// "<templateID>:<uuid>"; for fan-out instances it is "<templateID>:<groupKey>:<index>".
+	// Treat it as opaque and pass it back to TaskDone unchanged. Use TemplateNodeID /
+	// GroupKey / GroupItemIndex if you need to interpret the execution.
 	NodeID string
-	// TaskTemplateID identifies the specific type of external work/script the task executor should run.
+	// TemplateNodeID is the unique ID of the node inside the workflow graph definition which is running this TaskTemplateID.
+	TemplateNodeID string
+	// TaskTemplateID is the ID defining which template contains details of how to execute this node.
 	TaskTemplateID string
 	// Inputs contains the specific subset of WorkflowVariables mapped to this task's requirements.
 	Inputs map[string]any
@@ -82,11 +87,11 @@ type WorkflowInstance struct {
 	// WorkflowVariables holds the shared, dynamic business data passed between nodes.
 	WorkflowVariables map[string]any `json:"workflow_variables"`
 	// AuditTrail is a chronologically ordered log of events, milestones, or external signals.
-	AuditTrail []string             `json:"audit_trail"`
+	AuditTrail []string `json:"audit_trail"`
 	// NodeInfo maps a Node ID (from the workflow definition) to a list of NodeInfo executions.
 	// We use a slice here because a node inside a DYNAMIC_SPLIT region will run multiple times
 	// in parallel, generating one NodeInfo execution record per item in the group.
-	NodeInfo   map[string][]*NodeInfo `json:"node_states"`
+	NodeInfo map[string][]*NodeInfo `json:"node_states"`
 	// Edges contains the workflow graph connections from the workflow definition.
 	Edges []Edge `json:"edges"`
 }
@@ -139,11 +144,9 @@ type Manager interface {
 	// - ctx: The context for the request.
 	// - workflowID: The unique identifier of the running workflow.
 	// - runID: The execution run ID of the workflow.
-	// - nodeID: The ID of the task node that has completed.
-	// - groupKey: The unique identifier of the fan-out group (empty if outside a fan-out region).
-	// - groupItemIndex: The 0-based index of this execution instance in the parallel fan-out (0 if outside).
+	// - nodeID: The unique execution ID of the task node that has completed (can be simple or composite).
 	// - output: The output variables mapped back into the workflow variables.
-	TaskDone(ctx context.Context, workflowID, runID, nodeID, groupKey string, groupItemIndex int, output map[string]any) error
+	TaskDone(ctx context.Context, workflowID, runID, nodeID string, output map[string]any) error
 
 	// TaskUpdate is used to send an update about the task to the workflow.
 	// This is typically used to append messages to the workflow's internal state or update
@@ -217,18 +220,12 @@ func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, def 
 }
 
 // TaskDone is invoked by the external application to complete a dormant asynchronous Temporal Activity.
-// WorkflowID is the ID of the workflow
+// workflowID is the ID of the workflow
 // runID is the ID of the run
-// nodeID is the ID of the node
-// groupKey is the fan-out group key (empty for non-fanout)
-// groupItemIndex is the index of the execution instance in the parallel fan-out
+// nodeID is the unique execution ID of the node (can be simple node ID or composite ID)
 // output is the key value pairs that should be added to the global context
-func (m *temporalManagerImpl) TaskDone(ctx context.Context, workflowID, runID, nodeID, groupKey string, groupItemIndex int, output map[string]any) error {
-	activityID := nodeID
-	if groupKey != "" {
-		activityID = fmt.Sprintf("%s:%s:%d", nodeID, groupKey, groupItemIndex)
-	}
-	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, activityID, output, nil)
+func (m *temporalManagerImpl) TaskDone(ctx context.Context, workflowID, runID, nodeID string, output map[string]any) error {
+	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, nodeID, output, nil)
 }
 
 func (m *temporalManagerImpl) TaskUpdate(ctx context.Context, workflowID, runID string, event UpdateEvent) error {

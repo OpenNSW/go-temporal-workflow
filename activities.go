@@ -28,11 +28,12 @@ type Activities struct {
 // ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
 func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID string, inputs map[string]any) (map[string]any, error) {
 	info := activity.GetInfo(ctx)
-	nodeID, groupKey, groupItemIndex := parseActivityID(info.ActivityID)
+	templateNodeID, groupKey, groupItemIndex := parseActivityID(info.ActivityID)
 	payload := TaskPayload{
 		WorkflowID:     info.WorkflowExecution.ID,
 		RunID:          info.WorkflowExecution.RunID,
-		NodeID:         nodeID,
+		NodeID:         info.ActivityID, // Composite/Unique execution ID used for TaskDone completion
+		TemplateNodeID: templateNodeID,  // Clean template node ID from graph definition
 		TaskTemplateID: taskTemplateID,
 		Inputs:         inputs,
 		GroupKey:       groupKey,
@@ -57,11 +58,15 @@ func (a *Activities) WorkflowCompletedActivity(_ context.Context, workflowID str
 	return a.WorkflowCompletedActivityHandler(workflowID, finalContext)
 }
 
-func parseActivityID(activityID string) (nodeID string, groupKey string, groupItemIndex int) {
+func parseActivityID(activityID string) (templateNodeID, groupKey string, groupItemIndex int) {
 	parts := strings.Split(activityID, ":")
-	if len(parts) == 3 {
+	switch len(parts) {
+	case 3: // fan-out instance: "<template>:<groupKey>:<index>"
 		idx, _ := strconv.Atoi(parts[2])
 		return parts[0], parts[1], idx
+	case 2: // standard node: "<template>:<uuid>"
+		return parts[0], "", 0
+	default:
+		return activityID, "", 0
 	}
-	return activityID, "", 0
 }
