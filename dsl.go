@@ -71,28 +71,31 @@ type DynamicJoinConfig struct {
 }
 
 const (
-	FailureModeFailFast   = "fail_fast"
-	FailureModeCollectAll = "collect_all"
+	// FailureModeFailFast specifies that any single branch failure immediately fails the workflow.
+	FailureModeFailFast   = "FAIL_FAST"
+	// FailureModeCollectAll specifies that the engine waits for all parallel branches to complete;
+	// it will report failure if any branch failed, but still exposes successful branch outputs.
+	FailureModeCollectAll = "COLLECT_ALL"
 )
 
 // Node represents a step in the workflow graph.
 type Node struct {
 	// ID must be unique within the workflow definition and must not contain the ":" character.
-	ID          string      `json:"id"`
+	ID string `json:"id"`
 	// Type represents the kind of node: START, END, TASK, or GATEWAY.
-	Type        NodeType    `json:"type"`
+	Type NodeType `json:"type"`
 	// GatewayType specifies the specific gateway category, if Type is GATEWAY. See Gateway Types constants.
 	GatewayType GatewayType `json:"gateway_type,omitempty"`
 	// TaskTemplateID identifies the task template to run and must not contain the ":" character.
-	TaskTemplateID string              `json:"task_template_id,omitempty"`
+	TaskTemplateID string `json:"task_template_id,omitempty"`
 	// InputMapping maps WorkflowVariables Key -> Task Input Key.
-	InputMapping   map[string]string   `json:"input_mapping,omitempty"`
+	InputMapping map[string]string `json:"input_mapping,omitempty"`
 	// OutputMapping maps Task Output Key -> WorkflowVariables Key.
-	OutputMapping  map[string]string   `json:"output_mapping,omitempty"`
+	OutputMapping map[string]string `json:"output_mapping,omitempty"`
 	// DynamicSplit is the configuration for the DYNAMIC_SPLIT gateway.
-	DynamicSplit   *DynamicSplitConfig `json:"dynamic_split,omitempty"`
+	DynamicSplit *DynamicSplitConfig `json:"dynamic_split,omitempty"`
 	// DynamicJoin is the configuration for the DYNAMIC_JOIN gateway.
-	DynamicJoin    *DynamicJoinConfig  `json:"dynamic_join,omitempty"`
+	DynamicJoin *DynamicJoinConfig `json:"dynamic_join,omitempty"`
 }
 
 // Edge represents a directed connection between two nodes.
