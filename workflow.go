@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -229,7 +228,16 @@ func (g *graphInterpreter) mapTaskInputs(inputMapping map[string]string, iter *i
 	}
 
 	for globalKey, localKey := range inputMapping {
-		val, ok := g.resolveVariable(globalKey, iter)
+		// When inside a dynamic split region, check whether the path targets
+		// the iteration namespace first (e.g. "_iter.item", "_iter.local").
+		if iter != nil {
+			if val, ok := g.resolveDynamicVariable(globalKey, iter); ok {
+				setNestedKey(inputs, localKey, val)
+				continue
+			}
+		}
+		// Standard path: resolve against global workflow variables
+		val, ok := getNestedKey(g.instance.WorkflowVariables, globalKey)
 		if !ok {
 			return nil, fmt.Errorf("input mapping error: %q not found", globalKey)
 		}
@@ -239,8 +247,10 @@ func (g *graphInterpreter) mapTaskInputs(inputMapping map[string]string, iter *i
 	return inputs, nil
 }
 
-// mapTaskOutputs routes variables returned by a completed task back into either the global
-// workflow variables or the branch-scoped iteration variables according to the output mapping rules.
+// mapTaskOutputs routes variables returned by a completed task back into the
+// workflow variables. When executing inside a dynamic split region, outputs
+// targeting the iteration namespace (e.g. "_iter.local.xxx") are delegated
+// to mapDynamicOutputs in dynamic_split.go.
 func (g *graphInterpreter) mapTaskOutputs(
 	workflowVars map[string]any,
 	outputMapping map[string]string,
@@ -257,15 +267,16 @@ func (g *graphInterpreter) mapTaskOutputs(
 			return fmt.Errorf("output mapping error: required task variable '%s' not found in task result", taskKey)
 		}
 
-		// If the destination variable resides inside the local branch iteration space (e.g. "_iter.local.xxx")
-		if iter != nil && strings.HasPrefix(globalKey, iter.IterationKey+".") {
-			if err := g.mapIterationOutputs(iter, globalKey, val); err != nil {
+		// When inside a dynamic split region, check if the destination is in the iteration namespace
+		if iter != nil {
+			if handled, err := g.mapDynamicOutputs(iter, globalKey, val); err != nil {
 				return err
+			} else if handled {
+				continue
 			}
-		} else {
-			// Write directly to global workflow variables
-			setNestedKey(workflowVars, globalKey, val)
 		}
+		// Standard path: write directly to global workflow variables
+		setNestedKey(workflowVars, globalKey, val)
 	}
 	return nil
 }

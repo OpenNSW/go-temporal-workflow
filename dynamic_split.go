@@ -191,57 +191,57 @@ func (g *graphInterpreter) completeDynamicJoin(
 
 // --- Iteration variable resolution ---
 
-// resolveVariable retrieves a variable value using a dot-path notation.
-// It checks whether the variable references the localized iteration context (e.g. "_iter.item" or "_iter.local")
-// when running inside a parallel fan-out branch, and falls back to global workflow variables.
-func (g *graphInterpreter) resolveVariable(path string, iter *iterationContext) (any, bool) {
-	// If we are currently executing within a branch iteration and the path targets the iteration namespace
-	if iter != nil && strings.HasPrefix(path, iter.IterationKey+".") {
-		rest := path[len(iter.IterationKey)+1:]
-		switch {
-		case rest == "index":
-			// Return the 0-based parallel execution index
-			return iter.GroupItemIndex, true
-		case rest == "item":
-			// Return the collection item assigned to this branch
-			return iter.Item, true
-		case rest == "local":
-			// Return the local map state for the branch
-			return iter.Local, true
-		case strings.HasPrefix(rest, "item."):
-			// Resolve nested properties within the collection item
-			if m, ok := iter.Item.(map[string]any); ok {
-				return getNestedKey(m, rest[len("item."):])
-			}
-			return nil, false
-		case strings.HasPrefix(rest, "local."):
-			// Resolve nested properties within the local map
-			return getNestedKey(iter.Local, rest[len("local."):])
-		}
+// resolveDynamicVariable resolves a variable path against the iteration context
+// (e.g. "_iter.item", "_iter.local.xxx"). Returns (value, true) if the path
+// targets the iteration namespace, or (nil, false) to signal the caller should
+// fall back to global workflow variables.
+func (g *graphInterpreter) resolveDynamicVariable(path string, iter *iterationContext) (any, bool) {
+	if !strings.HasPrefix(path, iter.IterationKey+".") {
+		return nil, false
 	}
-	// Fallback: Resolve against global workflow variables
-	return getNestedKey(g.instance.WorkflowVariables, path)
+	rest := path[len(iter.IterationKey)+1:]
+	switch {
+	case rest == "index":
+		return iter.GroupItemIndex, true
+	case rest == "item":
+		return iter.Item, true
+	case rest == "local":
+		return iter.Local, true
+	case strings.HasPrefix(rest, "item."):
+		if m, ok := iter.Item.(map[string]any); ok {
+			return getNestedKey(m, rest[len("item."):])
+		}
+		return nil, false
+	case strings.HasPrefix(rest, "local."):
+		return getNestedKey(iter.Local, rest[len("local."):])
+	}
+	return nil, false
 }
 
-// mapIterationOutputs handles writing outputs to variables within the local iteration context.
-// Iteration indices and item properties are read-only and cannot be modified.
-func (g *graphInterpreter) mapIterationOutputs(iter *iterationContext, globalKey string, val any) error {
+// mapDynamicOutputs routes an output value into the iteration-scoped local
+// variables when the destination key targets the iteration namespace.
+// Returns (true, nil) if the key was handled, (false, nil) if the key does not
+// belong to the iteration namespace and should fall through to global variables.
+func (g *graphInterpreter) mapDynamicOutputs(iter *iterationContext, globalKey string, val any) (bool, error) {
+	if !strings.HasPrefix(globalKey, iter.IterationKey+".") {
+		return false, nil
+	}
 	rest := globalKey[len(iter.IterationKey)+1:]
 	if rest == "index" || rest == "item" || strings.HasPrefix(rest, "item.") {
-		return fmt.Errorf("output mapping error: cannot write to read-only iteration key %q", globalKey)
+		return false, fmt.Errorf("output mapping error: cannot write to read-only iteration key %q", globalKey)
 	}
 	if rest == "local" {
 		if m, ok := val.(map[string]any); ok {
 			iter.Local = m
 		} else {
-			return fmt.Errorf("output mapping error: cannot write non-map value to %q", globalKey)
+			return false, fmt.Errorf("output mapping error: cannot write non-map value to %q", globalKey)
 		}
 	} else if strings.HasPrefix(rest, "local.") {
 		setNestedKey(iter.Local, rest[len("local."):], val)
 	} else {
-		return fmt.Errorf("output mapping error: invalid write to iteration key %q", globalKey)
+		return false, fmt.Errorf("output mapping error: invalid write to iteration key %q", globalKey)
 	}
-	return nil
+	return true, nil
 }
 
 // --- Iteration helpers ---
