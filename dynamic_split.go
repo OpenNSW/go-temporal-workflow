@@ -97,13 +97,22 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 		futures = append(futures, f)
 	}
 
+	// Wait on branches by completion order (not index order) so fail_fast can
+	// return the moment any branch errors, rather than blocking on a slow
+	// lower-indexed branch (e.g. one still awaiting a Customs ack).
 	var firstErr error
+	selector := workflow.NewSelector(ctx)
 	for _, f := range futures {
-		if err := f.Get(ctx, nil); err != nil && firstErr == nil {
-			firstErr = err
-			if inv.failureMode == FailureModeFailFast {
-				return err
+		selector.AddFuture(f, func(f workflow.Future) {
+			if err := f.Get(ctx, nil); err != nil && firstErr == nil {
+				firstErr = err
 			}
+		})
+	}
+	for i := 0; i < n; i++ {
+		selector.Select(ctx)
+		if firstErr != nil && inv.failureMode == FailureModeFailFast {
+			return firstErr
 		}
 	}
 	if firstErr != nil {
