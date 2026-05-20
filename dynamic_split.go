@@ -13,7 +13,6 @@ import (
 // splitInvocation tracks runtime state for an active DYNAMIC_SPLIT invocation.
 type splitInvocation struct {
 	expected      int
-	completed     int
 	branchResults []map[string]any // index -> branch's iter.local snapshot
 	failureMode   string
 }
@@ -133,11 +132,9 @@ func (g *graphInterpreter) handleDynamicJoin(ctx workflow.Context, nodeInfo *Nod
 	if cfg == nil {
 		return fmt.Errorf("DYNAMIC_JOIN node %s missing dynamic_join config", node.ID)
 	}
-	inv, ok := g.splitInvocations[cfg.PairedSplitID]
-	if !ok {
+	if _, ok := g.splitInvocations[cfg.PairedSplitID]; !ok {
 		return fmt.Errorf("DYNAMIC_JOIN %s: no active invocation for split %s", node.ID, cfg.PairedSplitID)
 	}
-	inv.completed++
 
 	// Record arrival for this branch's parallel join node state
 	iterJoinInfo := g.ensureInstanceNodeInfo(ctx, node.ID, iter)
