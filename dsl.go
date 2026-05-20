@@ -70,6 +70,11 @@ type DynamicJoinConfig struct {
 	FailureMode string `json:"failure_mode,omitempty"`
 }
 
+const (
+	FailureModeFailFast   = "fail_fast"
+	FailureModeCollectAll = "collect_all"
+)
+
 // Node represents a step in the workflow graph.
 type Node struct {
 	ID             string              `json:"id"`

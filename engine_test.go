@@ -588,7 +588,7 @@ func TestDynamicSplitAndJoin(t *testing.T) {
 	require.Len(t, taskInsideNodes, 3)
 	for i := 0; i < 3; i++ {
 		require.Equal(t, NodeStatusCompleted, taskInsideNodes[i].Status)
-		require.Equal(t, i, taskInsideNodes[i].IterationIndex)
+		require.Equal(t, i, taskInsideNodes[i].GroupItemIndex)
 	}
 
 	env.AssertExpectations(t)

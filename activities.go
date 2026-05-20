@@ -28,7 +28,7 @@ type Activities struct {
 // ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
 func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID string, inputs map[string]any) (map[string]any, error) {
 	info := activity.GetInfo(ctx)
-	nodeID, groupKey, iterationIndex := parseActivityID(info.ActivityID)
+	nodeID, groupKey, groupItemIndex := parseActivityID(info.ActivityID)
 	payload := TaskPayload{
 		WorkflowID:     info.WorkflowExecution.ID,
 		RunID:          info.WorkflowExecution.RunID,
@@ -36,7 +36,7 @@ func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID str
 		TaskTemplateID: taskTemplateID,
 		Inputs:         inputs,
 		GroupKey:       groupKey,
-		IterationIndex: iterationIndex,
+		GroupItemIndex: groupItemIndex,
 	}
 
 	slog.Error("ExecuteTaskActivity", "payload", payload)
@@ -57,7 +57,7 @@ func (a *Activities) WorkflowCompletedActivity(_ context.Context, workflowID str
 	return a.WorkflowCompletedActivityHandler(workflowID, finalContext)
 }
 
-func parseActivityID(activityID string) (nodeID string, groupKey string, iterationIndex int) {
+func parseActivityID(activityID string) (nodeID string, groupKey string, groupItemIndex int) {
 	parts := strings.Split(activityID, ":")
 	if len(parts) == 3 {
 		idx, _ := strconv.Atoi(parts[2])

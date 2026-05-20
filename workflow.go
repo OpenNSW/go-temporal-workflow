@@ -20,12 +20,12 @@ type splitInvocation struct {
 }
 
 type iterationContext struct {
-	GroupKey     string
-	Index        int
-	Item         any            // nil if CountVariable was used
-	Local        map[string]any // per-branch scratch
-	PairedJoinID string         // the join this branch is headed toward
-	IterationKey string         // e.g. "_iter"
+	GroupKey       string
+	GroupItemIndex int
+	Item           any            // nil if CountVariable was used
+	Local          map[string]any // per-branch scratch
+	PairedJoinID   string         // the join this branch is headed toward
+	IterationKey   string         // e.g. "_iter"
 }
 
 // graphInterpreter holds the state for a single workflow execution.
@@ -91,7 +91,11 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 		}
 	}
 
-	// Resolve Source and Target IDs in edges to the generated node instance IDs
+	// Resolve Source and Target IDs in edges to the generated node instance IDs.
+	// We hardcode index 0 here because at workflow initialization (before execution starts),
+	// each node is registered with a single template NodeInfo in the slice at index 0.
+	// Dynamic split regions will dynamically create and append new NodeInfo instances to
+	// these slices as parallel paths are executed.
 	for i, edge := range def.Edges {
 		sourceNodeInfoSlice, sourceExists := instance.NodeInfo[edge.SourceID]
 		if !sourceExists || len(sourceNodeInfoSlice) == 0 {
@@ -255,28 +259,40 @@ func (g *graphInterpreter) mapTaskInputs(inputMapping map[string]string, iter *i
 	return inputs, nil
 }
 
+// resolveVariable retrieves a variable value using a dot-path notation.
+// It checks whether the variable references the localized iteration context (e.g. "_iter.item" or "_iter.local")
+// when running inside a parallel fan-out branch, and falls back to global workflow variables.
 func (g *graphInterpreter) resolveVariable(path string, iter *iterationContext) (any, bool) {
+	// If we are currently executing within a branch iteration and the path targets the iteration namespace
 	if iter != nil && strings.HasPrefix(path, iter.IterationKey+".") {
 		rest := path[len(iter.IterationKey)+1:]
 		switch {
 		case rest == "index":
-			return iter.Index, true
+			// Return the 0-based parallel execution index
+			return iter.GroupItemIndex, true
 		case rest == "item":
+			// Return the collection item assigned to this branch
 			return iter.Item, true
 		case rest == "local":
+			// Return the local map state for the branch
 			return iter.Local, true
 		case strings.HasPrefix(rest, "item."):
+			// Resolve nested properties within the collection item
 			if m, ok := iter.Item.(map[string]any); ok {
 				return getNestedKey(m, rest[len("item."):])
 			}
 			return nil, false
 		case strings.HasPrefix(rest, "local."):
+			// Resolve nested properties within the local map
 			return getNestedKey(iter.Local, rest[len("local."):])
 		}
 	}
+	// Fallback: Resolve against global workflow variables
 	return getNestedKey(g.instance.WorkflowVariables, path)
 }
 
+// mapTaskOutputs routes variables returned by a completed task back into either the global
+// workflow variables or the branch-scoped iteration variables according to the output mapping rules.
 func (g *graphInterpreter) mapTaskOutputs(
 	workflowVars map[string]any,
 	outputMapping map[string]string,
@@ -293,25 +309,36 @@ func (g *graphInterpreter) mapTaskOutputs(
 			return fmt.Errorf("output mapping error: required task variable '%s' not found in task result", taskKey)
 		}
 
+		// If the destination variable resides inside the local branch iteration space (e.g. "_iter.local.xxx")
 		if iter != nil && strings.HasPrefix(globalKey, iter.IterationKey+".") {
-			rest := globalKey[len(iter.IterationKey)+1:]
-			if rest == "index" || rest == "item" || strings.HasPrefix(rest, "item.") {
-				return fmt.Errorf("output mapping error: cannot write to read-only iteration key %q", globalKey)
-			}
-			if rest == "local" {
-				if m, ok := val.(map[string]any); ok {
-					iter.Local = m
-				} else {
-					return fmt.Errorf("output mapping error: cannot write non-map value to %q", globalKey)
-				}
-			} else if strings.HasPrefix(rest, "local.") {
-				setNestedKey(iter.Local, rest[len("local."):], val)
-			} else {
-				return fmt.Errorf("output mapping error: invalid write to iteration key %q", globalKey)
+			if err := g.mapIterationOutputs(iter, globalKey, val); err != nil {
+				return err
 			}
 		} else {
+			// Write directly to global workflow variables
 			setNestedKey(workflowVars, globalKey, val)
 		}
+	}
+	return nil
+}
+
+// mapIterationOutputs handles writing outputs to variables within the local iteration context.
+// Iteration indices and item properties are read-only and cannot be modified.
+func (g *graphInterpreter) mapIterationOutputs(iter *iterationContext, globalKey string, val any) error {
+	rest := globalKey[len(iter.IterationKey)+1:]
+	if rest == "index" || rest == "item" || strings.HasPrefix(rest, "item.") {
+		return fmt.Errorf("output mapping error: cannot write to read-only iteration key %q", globalKey)
+	}
+	if rest == "local" {
+		if m, ok := val.(map[string]any); ok {
+			iter.Local = m
+		} else {
+			return fmt.Errorf("output mapping error: cannot write non-map value to %q", globalKey)
+		}
+	} else if strings.HasPrefix(rest, "local.") {
+		setNestedKey(iter.Local, rest[len("local."):], val)
+	} else {
+		return fmt.Errorf("output mapping error: invalid write to iteration key %q", globalKey)
 	}
 	return nil
 }
@@ -445,7 +472,7 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 			pairedJoinID:  cfg.PairedJoinID,
 			expected:      n,
 			branchResults: make([]map[string]any, n),
-			failureMode:   defaultIfEmpty(g.nodes[cfg.PairedJoinID].DynamicJoin.FailureMode, "fail_fast"),
+			failureMode:   defaultIfEmpty(g.nodes[cfg.PairedJoinID].DynamicJoin.FailureMode, FailureModeFailFast),
 		}
 		g.splitInvocations[node.ID] = inv
 
@@ -453,8 +480,9 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 		nodeInfo.UpdatedAt = workflow.Now(ctx)
 
 		if n == 0 {
-			// Zero-iteration shortcut: skip the region entirely, transition the
-			// paired join directly. Aggregate empty result.
+			// Zero-iteration shortcut: this can happen if the items list is empty (e.g., a shipment has 0 containers).
+			// Instead of blocking indefinitely waiting for 0 branches, we skip the region entirely, transition
+			// the paired join directly, and aggregate an empty result slice.
 			return g.completeDynamicJoin(ctx, node.ID, cfg.PairedJoinID, inv)
 		}
 
@@ -468,12 +496,12 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 			idx := i
 			f, settable := workflow.NewFuture(ctx)
 			branchIter := &iterationContext{
-				GroupKey:     groupKey,
-				Index:        idx,
-				Item:         itemAt(items, idx),
-				Local:        make(map[string]any),
-				PairedJoinID: cfg.PairedJoinID,
-				IterationKey: defaultIfEmpty(cfg.IterationKey, "_iter"),
+				GroupKey:       groupKey,
+				GroupItemIndex: idx,
+				Item:           itemAt(items, idx),
+				Local:          make(map[string]any),
+				PairedJoinID:   cfg.PairedJoinID,
+				IterationKey:   defaultIfEmpty(cfg.IterationKey, "_iter"),
 			}
 			workflow.Go(ctx, func(c workflow.Context) {
 				g.edgeTokens[firstEdge.ID]++
@@ -489,13 +517,13 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 		for _, f := range futures {
 			if err := f.Get(ctx, nil); err != nil && firstErr == nil {
 				firstErr = err
-				if inv.failureMode == "fail_fast" {
+				if inv.failureMode == FailureModeFailFast {
 					return err
 				}
 			}
 		}
 		if firstErr != nil {
-			if inv.failureMode == "collect_all" {
+			if inv.failureMode == FailureModeCollectAll {
 				joinNode := g.nodes[cfg.PairedJoinID]
 				joinCfg := joinNode.DynamicJoin
 				if joinCfg != nil && joinCfg.ResultsVariable != "" {
@@ -626,13 +654,13 @@ func (g *graphInterpreter) ensureInstanceNodeInfo(
 	}
 	instances := g.instance.NodeInfo[templateNodeID]
 	// Pad slice if needed (branches may arrive out of order)
-	for len(instances) <= iter.Index {
+	for len(instances) <= iter.GroupItemIndex {
 		instances = append(instances, nil)
 	}
-	if instances[iter.Index] == nil || (iter.Index == 0 && instances[0].GroupKey == "") {
+	if instances[iter.GroupItemIndex] == nil || (iter.GroupItemIndex == 0 && instances[0].GroupKey == "") {
 		template := g.nodes[templateNodeID]
-		instances[iter.Index] = &NodeInfo{
-			ID:             fmt.Sprintf("%s:%s:%d", templateNodeID, iter.GroupKey, iter.Index),
+		instances[iter.GroupItemIndex] = &NodeInfo{
+			ID:             fmt.Sprintf("%s:%s:%d", templateNodeID, iter.GroupKey, iter.GroupItemIndex),
 			Type:           template.Type,
 			GatewayType:    template.GatewayType,
 			TaskTemplateID: template.TaskTemplateID,
@@ -640,146 +668,11 @@ func (g *graphInterpreter) ensureInstanceNodeInfo(
 			UpdatedAt:      workflow.Now(ctx),
 			Status:         NodeStatusRunning,
 			GroupKey:       iter.GroupKey,
-			IterationIndex: iter.Index,
+			GroupItemIndex: iter.GroupItemIndex,
 		}
 	}
 	g.instance.NodeInfo[templateNodeID] = instances
-	return instances[iter.Index]
-}
-
-func validateDefinition(def WorkflowDefinition) error {
-	nodes := make(map[string]Node)
-	for _, n := range def.Nodes {
-		nodes[n.ID] = n
-	}
-
-	outEdges := make(map[string][]Edge)
-	inEdges := make(map[string][]Edge)
-	for _, e := range def.Edges {
-		outEdges[e.SourceID] = append(outEdges[e.SourceID], e)
-		inEdges[e.TargetID] = append(inEdges[e.TargetID], e)
-	}
-
-	splits := make(map[string]Node)
-	joins := make(map[string]Node)
-	splitToJoin := make(map[string]string)
-	joinToSplit := make(map[string]string)
-
-	for _, n := range def.Nodes {
-		if n.Type == NodeTypeGateway {
-			if n.GatewayType == GatewayTypeDynamicSplit {
-				splits[n.ID] = n
-				if n.DynamicSplit == nil {
-					return fmt.Errorf("node %s has GatewayType DYNAMIC_SPLIT but is missing dynamic_split config", n.ID)
-				}
-				if n.DynamicSplit.PairedJoinID == "" {
-					return fmt.Errorf("node %s dynamic_split config missing paired_join_id", n.ID)
-				}
-				splitToJoin[n.ID] = n.DynamicSplit.PairedJoinID
-			} else if n.GatewayType == GatewayTypeDynamicJoin {
-				joins[n.ID] = n
-				if n.DynamicJoin == nil {
-					return fmt.Errorf("node %s has GatewayType DYNAMIC_JOIN but is missing dynamic_join config", n.ID)
-				}
-				if n.DynamicJoin.PairedSplitID == "" {
-					return fmt.Errorf("node %s dynamic_join config missing paired_split_id", n.ID)
-				}
-				joinToSplit[n.ID] = n.DynamicJoin.PairedSplitID
-			}
-		}
-	}
-
-	// 1. & 2. Bijective pairing validation
-	for sID, jID := range splitToJoin {
-		jNode, ok := joins[jID]
-		if !ok {
-			return fmt.Errorf("split %s references non-existent or invalid paired join %s", sID, jID)
-		}
-		if jNode.DynamicJoin.PairedSplitID != sID {
-			return fmt.Errorf("split %s paired with join %s, but join is paired with %s", sID, jID, jNode.DynamicJoin.PairedSplitID)
-		}
-	}
-	for jID, sID := range joinToSplit {
-		_, ok := splits[sID]
-		if !ok {
-			return fmt.Errorf("join %s references non-existent or invalid paired split %s", jID, sID)
-		}
-	}
-
-	// 6. Exactly one of CountVariable / ItemsVariable is set
-	for _, n := range splits {
-		cfg := n.DynamicSplit
-		if (cfg.CountVariable == "" && cfg.ItemsVariable == "") || (cfg.CountVariable != "" && cfg.ItemsVariable != "") {
-			return fmt.Errorf("dynamic split %s must set exactly one of count_variable or items_variable", n.ID)
-		}
-	}
-
-	// For each pair, do validation
-	for sID, jID := range splitToJoin {
-		// 3. Exactly one outgoing edge from split.
-		sOut := outEdges[sID]
-		if len(sOut) != 1 {
-			return fmt.Errorf("split %s must have exactly one outgoing edge, found %d", sID, len(sOut))
-		}
-
-		// Find the nodes inside the region by doing a DFS/BFS from the split to the join
-		visited := make(map[string]bool)
-		var regionNodes []string
-		var findRegion func(curr string) error
-		findRegion = func(curr string) error {
-			if curr == jID {
-				return nil
-			}
-			if curr != sID {
-				if visited[curr] {
-					return nil
-				}
-				visited[curr] = true
-				regionNodes = append(regionNodes, curr)
-			}
-			for _, e := range outEdges[curr] {
-				if nodes[e.TargetID].GatewayType == GatewayTypeDynamicSplit {
-					// 5. Nested fan-outs are rejected
-					return fmt.Errorf("nested dynamic splits are not supported: split %s is nested inside split %s", e.TargetID, sID)
-				}
-				if err := findRegion(e.TargetID); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-
-		if err := findRegion(sID); err != nil {
-			return err
-		}
-
-		// 3. Exactly one incoming edge on join from inside the region.
-		inToJoinFromRegion := 0
-		for _, e := range inEdges[jID] {
-			if e.SourceID == sID || visited[e.SourceID] {
-				inToJoinFromRegion++
-			}
-		}
-		if inToJoinFromRegion != 1 {
-			return fmt.Errorf("join %s must have exactly one incoming edge from inside its paired split region, found %d", jID, inToJoinFromRegion)
-		}
-
-		// 4. Single-entry, single-exit subgraph validation.
-		for _, rNodeID := range regionNodes {
-			for _, e := range inEdges[rNodeID] {
-				if e.SourceID != sID && !visited[e.SourceID] {
-					return fmt.Errorf("region node %s has an incoming edge %s from outside the split region (source: %s)", rNodeID, e.ID, e.SourceID)
-				}
-			}
-			for _, e := range outEdges[rNodeID] {
-				if e.TargetID != jID && !visited[e.TargetID] {
-					return fmt.Errorf("region node %s has an outgoing edge %s to outside the split region (target: %s)", rNodeID, e.ID, e.TargetID)
-				}
-			}
-		}
-	}
-
-	return nil
+	return instances[iter.GroupItemIndex]
 }
 
 func defaultIfEmpty(val, fallback string) string {
