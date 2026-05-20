@@ -669,7 +669,7 @@ const dynamicSplitCollectAllWorkflowJSON = `
       "dynamic_join": {
         "paired_split_id": "split",
         "results_variable": "aggregation_results",
-        "failure_mode": "collect_all"
+        "failure_mode": "COLLECT_ALL"
       }
     },
     { "id": "end", "type": "END" }
