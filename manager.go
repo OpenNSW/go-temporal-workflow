@@ -36,6 +36,12 @@ type TaskPayload struct {
 	TaskTemplateID string
 	// Inputs contains the specific subset of WorkflowVariables mapped to this task's requirements.
 	Inputs map[string]any
+
+	// GroupKey is empty for non-fanout tasks. Used by Layer 2 to identify and
+	// (eventually) aggregate sibling tasks in the UI.
+	GroupKey string `json:",omitempty"`
+	// IterationIndex is empty for non-fanout tasks.
+	IterationIndex int `json:",omitempty"`
 }
 
 // NodeStatus represents the status of a specific workflow node.
@@ -58,6 +64,11 @@ type NodeInfo struct {
 	GatewayType    GatewayType `json:"gateway_type,omitempty"`     // See Gateway Types constants
 	TaskTemplateID string      `json:"task_template_id,omitempty"` // Identifier for the task template to run
 	Status         NodeStatus  `json:"status"`                     // Status of the node
+
+	// GroupKey is present only for instances inside a fan-out region.
+	GroupKey string `json:"group_key,omitempty"`
+	// IterationIndex is present only for instances inside a fan-out region.
+	IterationIndex int `json:"iteration_index,omitempty"`
 }
 
 // WorkflowInstance holds the dynamic runtime state of the workflow execution.
@@ -72,7 +83,7 @@ type WorkflowInstance struct {
 	WorkflowVariables map[string]any `json:"workflow_variables"`
 	// AuditTrail is a chronologically ordered log of events, milestones, or external signals.
 	AuditTrail []string             `json:"audit_trail"`
-	NodeInfo   map[string]*NodeInfo `json:"node_states"`
+	NodeInfo   map[string][]*NodeInfo `json:"node_states"`
 	// Edges contains the workflow graph connections from the workflow definition.
 	Edges []Edge `json:"edges"`
 }
@@ -120,7 +131,7 @@ type Manager interface {
 	// TaskDone is called by the external system to resume a paused workflow node.
 	// It routes the output data back into the specific workflow's WorkflowVariables using the provided
 	// IDs (workflowID, runID, nodeID) that were originally emitted via the TaskActivationHandler.
-	TaskDone(ctx context.Context, workflowID, runID, nodeID string, output map[string]any) error
+	TaskDone(ctx context.Context, workflowID, runID, nodeID, groupKey string, iterationIndex int, output map[string]any) error
 
 	// TaskUpdate is used to send an update about the task to the workflow.
 	// This is typically used to append messages to the workflow's internal state or update
@@ -197,9 +208,15 @@ func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, def 
 // WorkflowID is the ID of the workflow
 // runID is the ID of the run
 // nodeID is the ID of the node
-// output is the key valye pairs that should be added to the global context
-func (m *temporalManagerImpl) TaskDone(ctx context.Context, workflowID, runID, nodeID string, output map[string]any) error {
-	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, nodeID, output, nil)
+// groupKey is the iteration group key (empty for non-fanout)
+// iterationIndex is the iteration index
+// output is the key value pairs that should be added to the global context
+func (m *temporalManagerImpl) TaskDone(ctx context.Context, workflowID, runID, nodeID, groupKey string, iterationIndex int, output map[string]any) error {
+	activityID := nodeID
+	if groupKey != "" {
+		activityID = fmt.Sprintf("%s:%s:%d", nodeID, groupKey, iterationIndex)
+	}
+	return m.temporalClient.CompleteActivityByID(ctx, "default", workflowID, runID, activityID, output, nil)
 }
 
 func (m *temporalManagerImpl) TaskUpdate(ctx context.Context, workflowID, runID string, event UpdateEvent) error {

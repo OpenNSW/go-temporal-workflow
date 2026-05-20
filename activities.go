@@ -4,6 +4,8 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"go.temporal.io/sdk/activity"
 )
@@ -26,12 +28,15 @@ type Activities struct {
 // ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
 func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID string, inputs map[string]any) (map[string]any, error) {
 	info := activity.GetInfo(ctx)
+	nodeID, groupKey, iterationIndex := parseActivityID(info.ActivityID)
 	payload := TaskPayload{
 		WorkflowID:     info.WorkflowExecution.ID,
 		RunID:          info.WorkflowExecution.RunID,
-		NodeID:         info.ActivityID, // this is Node.ID which was passed in workflow.WithActivityOptions(ctx, nodeActOpts)
+		NodeID:         nodeID,
 		TaskTemplateID: taskTemplateID,
 		Inputs:         inputs,
+		GroupKey:       groupKey,
+		IterationIndex: iterationIndex,
 	}
 
 	slog.Error("ExecuteTaskActivity", "payload", payload)
@@ -50,4 +55,13 @@ func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID str
 // WorkflowCompletedActivity is a Temporal activity that executes when a workflow completes successfully.
 func (a *Activities) WorkflowCompletedActivity(_ context.Context, workflowID string, finalContext map[string]any) error {
 	return a.WorkflowCompletedActivityHandler(workflowID, finalContext)
+}
+
+func parseActivityID(activityID string) (nodeID string, groupKey string, iterationIndex int) {
+	parts := strings.Split(activityID, ":")
+	if len(parts) == 3 {
+		idx, _ := strconv.Atoi(parts[2])
+		return parts[0], parts[1], idx
+	}
+	return activityID, "", 0
 }
