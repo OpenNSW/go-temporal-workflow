@@ -133,11 +133,16 @@ type Manager interface {
 
 	// TaskDone is called by the external system to resume a paused workflow node.
 	// It routes the output data back into the specific workflow's WorkflowVariables using the provided
-	// IDs (workflowID, runID, nodeID) that were originally emitted via the TaskActivationHandler.
+	// IDs that were originally emitted via the TaskActivationHandler.
 	//
 	// Parameters:
+	// - ctx: The context for the request.
+	// - workflowID: The unique identifier of the running workflow.
+	// - runID: The execution run ID of the workflow.
+	// - nodeID: The ID of the task node that has completed.
 	// - groupKey: The unique identifier of the fan-out group (empty if outside a fan-out region).
 	// - groupItemIndex: The 0-based index of this execution instance in the parallel fan-out (0 if outside).
+	// - output: The output variables mapped back into the workflow variables.
 	TaskDone(ctx context.Context, workflowID, runID, nodeID, groupKey string, groupItemIndex int, output map[string]any) error
 
 	// TaskUpdate is used to send an update about the task to the workflow.
