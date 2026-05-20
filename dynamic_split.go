@@ -117,15 +117,7 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 	}
 	if firstErr != nil {
 		if inv.failureMode == FailureModeCollectAll {
-			joinNode := g.nodes[cfg.PairedJoinID]
-			joinCfg := joinNode.DynamicJoin
-			if joinCfg != nil && joinCfg.ResultsVariable != "" {
-				results := make([]any, len(inv.branchResults))
-				for i, r := range inv.branchResults {
-					results[i] = r
-				}
-				setNestedKey(g.instance.WorkflowVariables, joinCfg.ResultsVariable, results)
-			}
+			g.aggregateBranchResults(inv, cfg.PairedJoinID)
 		}
 		return firstErr
 	}
@@ -158,6 +150,21 @@ func (g *graphInterpreter) handleDynamicJoin(ctx workflow.Context, nodeInfo *Nod
 	return nil
 }
 
+// aggregateBranchResults writes each branch's iter.local snapshot into the
+// join's ResultsVariable (when configured), preserving branch order by index.
+// No-op if the join is missing, has no DynamicJoin config, or sets no ResultsVariable.
+func (g *graphInterpreter) aggregateBranchResults(inv *splitInvocation, joinID string) {
+	joinNode := g.nodes[joinID]
+	if joinNode == nil || joinNode.DynamicJoin == nil || joinNode.DynamicJoin.ResultsVariable == "" {
+		return
+	}
+	results := make([]any, len(inv.branchResults))
+	for i, r := range inv.branchResults {
+		results[i] = r
+	}
+	setNestedKey(g.instance.WorkflowVariables, joinNode.DynamicJoin.ResultsVariable, results)
+}
+
 // completeDynamicJoin aggregates branch results, marks the join completed, and
 // transitions to the join's single outgoing edge (back in the outer scope).
 func (g *graphInterpreter) completeDynamicJoin(
@@ -165,17 +172,7 @@ func (g *graphInterpreter) completeDynamicJoin(
 	splitID, joinID string,
 	inv *splitInvocation,
 ) error {
-	joinNode := g.nodes[joinID]
-	cfg := joinNode.DynamicJoin
-
-	if cfg.ResultsVariable != "" {
-		// Aggregate per-branch local maps into []map[string]any
-		results := make([]any, len(inv.branchResults))
-		for i, r := range inv.branchResults {
-			results[i] = r
-		}
-		setNestedKey(g.instance.WorkflowVariables, cfg.ResultsVariable, results)
-	}
+	g.aggregateBranchResults(inv, joinID)
 
 	// Mark the join's first (or only) NodeInfo entry as completed for the
 	// "outer" workflow view.
