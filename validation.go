@@ -15,18 +15,55 @@ import (
 func validateDefinition(def WorkflowDefinition) error {
 	nodes := make(map[string]Node)
 	for _, n := range def.Nodes {
+		if strings.TrimSpace(n.ID) == "" {
+			return fmt.Errorf("node ID cannot be empty")
+		}
 		if strings.Contains(n.ID, ":") {
 			return fmt.Errorf("node ID %q cannot contain ':' character", n.ID)
 		}
 		if strings.Contains(n.TaskTemplateID, ":") {
 			return fmt.Errorf("node %s task_template_id %q cannot contain ':' character", n.ID, n.TaskTemplateID)
 		}
+
+		// Validate NodeType
+		switch n.Type {
+		case NodeTypeStart, NodeTypeEnd, NodeTypeTask, NodeTypeGateway:
+			// valid
+		default:
+			return fmt.Errorf("node %s has invalid type %q", n.ID, n.Type)
+		}
+
+		// Validate GatewayType if Gateway node
+		if n.Type == NodeTypeGateway {
+			switch n.GatewayType {
+			case GatewayTypeExclusiveSplit, GatewayTypeParallelSplit, GatewayTypeExclusiveJoin, GatewayTypeParallelJoin, GatewayTypeDynamicSplit, GatewayTypeDynamicJoin:
+				// valid
+			default:
+				return fmt.Errorf("gateway node %s has invalid gateway_type %q", n.ID, n.GatewayType)
+			}
+		}
+
 		nodes[n.ID] = n
 	}
 
 	outEdges := make(map[string][]Edge)
 	inEdges := make(map[string][]Edge)
 	for _, e := range def.Edges {
+		if strings.TrimSpace(e.ID) == "" {
+			return fmt.Errorf("edge ID cannot be empty")
+		}
+		if strings.TrimSpace(e.SourceID) == "" {
+			return fmt.Errorf("edge %s source_id cannot be empty", e.ID)
+		}
+		if strings.TrimSpace(e.TargetID) == "" {
+			return fmt.Errorf("edge %s target_id cannot be empty", e.ID)
+		}
+		if _, ok := nodes[e.SourceID]; !ok {
+			return fmt.Errorf("edge %s references non-existent source node %q", e.ID, e.SourceID)
+		}
+		if _, ok := nodes[e.TargetID]; !ok {
+			return fmt.Errorf("edge %s references non-existent target node %q", e.ID, e.TargetID)
+		}
 		outEdges[e.SourceID] = append(outEdges[e.SourceID], e)
 		inEdges[e.TargetID] = append(inEdges[e.TargetID], e)
 	}
@@ -54,6 +91,11 @@ func validateDefinition(def WorkflowDefinition) error {
 				}
 				if n.DynamicJoin.PairedSplitID == "" {
 					return fmt.Errorf("node %s dynamic_join config missing paired_split_id", n.ID)
+				}
+				if n.DynamicJoin.FailureMode != "" &&
+					n.DynamicJoin.FailureMode != FailureModeFailFast &&
+					n.DynamicJoin.FailureMode != FailureModeCollectAll {
+					return fmt.Errorf("node %s has invalid failure_mode %q, must be either %q or %q", n.ID, n.DynamicJoin.FailureMode, FailureModeFailFast, FailureModeCollectAll)
 				}
 				joinToSplit[n.ID] = n.DynamicJoin.PairedSplitID
 			}

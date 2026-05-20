@@ -54,7 +54,7 @@ const dynamicSplitWorkflowJSON = `
       "dynamic_join": {
         "paired_split_id": "split",
         "results_variable": "aggregation_results",
-        "failure_mode": "fail_fast"
+        "failure_mode": "FAIL_FAST"
       }
     },
     { "id": "end", "type": "END" }
