@@ -39,7 +39,7 @@ func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID str
 		GroupItemIndex: groupItemIndex,
 	}
 
-	slog.Error("ExecuteTaskActivity", "payload", payload)
+	slog.Info("ExecuteTaskActivity", "payload", payload)
 
 	// Trigger custom code block. ExecuteTaskActivityHandler can return error ErrResultPending to pause the workflow
 	// or return a nil error with the outputs for the next step to consume (synchronous execution)

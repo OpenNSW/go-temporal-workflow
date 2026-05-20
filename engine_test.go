@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -570,7 +571,7 @@ func TestDynamicSplitAndJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, StatusCompleted, instance.Status)
-	
+
 	// Verify Result aggregation
 	aggRaw, ok := instance.WorkflowVariables["aggregation_results"]
 	require.True(t, ok)
@@ -709,8 +710,10 @@ func TestDynamicSplitCollectAll(t *testing.T) {
 	require.Contains(t, env.GetWorkflowError().Error(), "failed branch A")
 
 	// But it should have run both and populated results (successes and partial failures)
+	queryResult, err := env.QueryWorkflow("GetStatus")
+	require.NoError(t, err)
 	var instance WorkflowInstance
-	err = env.GetWorkflowResult(&instance)
+	err = queryResult.Get(&instance)
 	require.NoError(t, err)
 
 	aggRaw, ok := instance.WorkflowVariables["aggregation_results"]
@@ -726,33 +729,84 @@ func TestDynamicSplitCollectAll(t *testing.T) {
 
 func TestDynamicValidationConstraints(t *testing.T) {
 	testSuite := &testsuite.WorkflowTestSuite{}
-	env := testSuite.NewTestWorkflowEnvironment()
 
-	// Missing PairedJoinID
-	invalidJSON := `
-	{
-	  "workflow_id": "invalid-validation",
-	  "name": "invalid-validation",
-	  "version": 1,
-	  "edges":[],
-	  "nodes":[
-	    {
-	      "id": "split",
-	      "type": "GATEWAY",
-	      "gateway_type": "DYNAMIC_SPLIT",
-	      "dynamic_split": {
-	        "items_variable": "containers"
-	      }
-	    }
-	  ]
-	}`
+	t.Run("missing paired join ID", func(t *testing.T) {
+		env := testSuite.NewTestWorkflowEnvironment()
+		invalidJSON := `
+		{
+		  "workflow_id": "invalid-validation",
+		  "name": "invalid-validation",
+		  "version": 1,
+		  "edges":[],
+		  "nodes":[
+			{
+			  "id": "split",
+			  "type": "GATEWAY",
+			  "gateway_type": "DYNAMIC_SPLIT",
+			  "dynamic_split": {
+				"items_variable": "containers"
+			  }
+			}
+		  ]
+		}`
+		var def WorkflowDefinition
+		err := json.Unmarshal([]byte(invalidJSON), &def)
+		require.NoError(t, err)
 
-	var def WorkflowDefinition
-	err := json.Unmarshal([]byte(invalidJSON), &def)
-	require.NoError(t, err)
+		env.ExecuteWorkflow(GraphInterpreterWorkflow, def, map[string]any{})
+		require.True(t, env.IsWorkflowCompleted())
+		require.Error(t, env.GetWorkflowError())
+		require.Contains(t, env.GetWorkflowError().Error(), "missing paired_join_id")
+	})
 
-	env.ExecuteWorkflow(GraphInterpreterWorkflow, def, map[string]any{})
-	require.True(t, env.IsWorkflowCompleted())
-	require.Error(t, env.GetWorkflowError())
-	require.Contains(t, env.GetWorkflowError().Error(), "missing paired_join_id")
+	t.Run("node ID contains colon", func(t *testing.T) {
+		env := testSuite.NewTestWorkflowEnvironment()
+		invalidJSON := `
+		{
+		  "workflow_id": "invalid-colon",
+		  "name": "invalid-colon",
+		  "version": 1,
+		  "edges":[],
+		  "nodes":[
+			{
+			  "id": "node:invalid",
+			  "type": "START"
+			}
+		  ]
+		}`
+		var def WorkflowDefinition
+		err := json.Unmarshal([]byte(invalidJSON), &def)
+		require.NoError(t, err)
+
+		env.ExecuteWorkflow(GraphInterpreterWorkflow, def, map[string]any{})
+		require.True(t, env.IsWorkflowCompleted())
+		require.Error(t, env.GetWorkflowError())
+		require.Contains(t, env.GetWorkflowError().Error(), "cannot contain ':' character")
+	})
+
+	t.Run("task template ID contains colon", func(t *testing.T) {
+		env := testSuite.NewTestWorkflowEnvironment()
+		invalidJSON := `
+		{
+		  "workflow_id": "invalid-template-colon",
+		  "name": "invalid-template-colon",
+		  "version": 1,
+		  "edges":[],
+		  "nodes":[
+			{
+			  "id": "node1",
+			  "type": "TASK",
+			  "task_template_id": "task:invalid"
+			}
+		  ]
+		}`
+		var def WorkflowDefinition
+		err := json.Unmarshal([]byte(invalidJSON), &def)
+		require.NoError(t, err)
+
+		env.ExecuteWorkflow(GraphInterpreterWorkflow, def, map[string]any{})
+		require.True(t, env.IsWorkflowCompleted())
+		require.Error(t, env.GetWorkflowError())
+		require.Contains(t, env.GetWorkflowError().Error(), "cannot contain ':' character")
+	})
 }

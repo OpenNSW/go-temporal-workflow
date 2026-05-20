@@ -77,14 +77,16 @@ const (
 
 // Node represents a step in the workflow graph.
 type Node struct {
-	ID             string              `json:"id"`
-	Type           NodeType            `json:"type"`                       // START, END, TASK, or GATEWAY
-	GatewayType    GatewayType         `json:"gateway_type,omitempty"`     // See Gateway Types constants
-	TaskTemplateID string              `json:"task_template_id,omitempty"` // Identifier for the task template to run
-	InputMapping   map[string]string   `json:"input_mapping,omitempty"`    // Maps WorkflowVariables Key -> Task Input Key
-	OutputMapping  map[string]string   `json:"output_mapping,omitempty"`   // Maps Task Output Key -> WorkflowVariables Key
-	DynamicSplit   *DynamicSplitConfig `json:"dynamic_split,omitempty"`    // Configuration for DYNAMIC_SPLIT gateway
-	DynamicJoin    *DynamicJoinConfig  `json:"dynamic_join,omitempty"`     // Configuration for DYNAMIC_JOIN gateway
+	// ID must be unique within the workflow definition and must not contain the ":" character.
+	ID          string      `json:"id"`
+	Type        NodeType    `json:"type"`                   // START, END, TASK, or GATEWAY
+	GatewayType GatewayType `json:"gateway_type,omitempty"` // See Gateway Types constants
+	// TaskTemplateID identifies the task template to run and must not contain the ":" character.
+	TaskTemplateID string              `json:"task_template_id,omitempty"`
+	InputMapping   map[string]string   `json:"input_mapping,omitempty"`  // Maps WorkflowVariables Key -> Task Input Key
+	OutputMapping  map[string]string   `json:"output_mapping,omitempty"` // Maps Task Output Key -> WorkflowVariables Key
+	DynamicSplit   *DynamicSplitConfig `json:"dynamic_split,omitempty"`  // Configuration for DYNAMIC_SPLIT gateway
+	DynamicJoin    *DynamicJoinConfig  `json:"dynamic_join,omitempty"`   // Configuration for DYNAMIC_JOIN gateway
 }
 
 // Edge represents a directed connection between two nodes.

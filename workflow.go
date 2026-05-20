@@ -10,12 +10,9 @@ import (
 )
 
 type splitInvocation struct {
-	groupKey      string
-	pairedJoinID  string
 	expected      int
 	completed     int
 	branchResults []map[string]any // index -> branch's iter.local snapshot
-	firstError    error            // for fail_fast mode
 	failureMode   string
 }
 
@@ -24,7 +21,6 @@ type iterationContext struct {
 	GroupItemIndex int
 	Item           any            // nil if CountVariable was used
 	Local          map[string]any // per-branch scratch
-	PairedJoinID   string         // the join this branch is headed toward
 	IterationKey   string         // e.g. "_iter"
 }
 
@@ -92,23 +88,22 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 	}
 
 	// Resolve Source and Target IDs in edges to the generated node instance IDs.
-	// We hardcode index 0 here because at workflow initialization (before execution starts),
-	// each node is registered with a single template NodeInfo in the slice at index 0.
-	// Dynamic split regions will dynamically create and append new NodeInfo instances to
-	// these slices as parallel paths are executed.
+	// Note: Edges are defined at the template level and represent the static structure of
+	// the workflow. For nodes that run multiple times (e.g. inside a fan-out region), Edges
+	// reference the base instance IDs generated during workflow initialization.
 	for i, edge := range def.Edges {
-		sourceNodeInfoSlice, sourceExists := instance.NodeInfo[edge.SourceID]
-		if !sourceExists || len(sourceNodeInfoSlice) == 0 {
+		sourceUUID, sourceExists := generatedUUIDs[edge.SourceID]
+		if !sourceExists {
 			return nil, fmt.Errorf("invalid edge definition: source node '%s' not found for edge '%s'", edge.SourceID, edge.ID)
 		}
-		targetNodeInfoSlice, targetExists := instance.NodeInfo[edge.TargetID]
-		if !targetExists || len(targetNodeInfoSlice) == 0 {
+		targetUUID, targetExists := generatedUUIDs[edge.TargetID]
+		if !targetExists {
 			return nil, fmt.Errorf("invalid edge definition: target node '%s' not found for edge '%s'", edge.TargetID, edge.ID)
 		}
 		instance.Edges[i] = Edge{
 			ID:        edge.ID,
-			SourceID:  sourceNodeInfoSlice[0].ID,
-			TargetID:  targetNodeInfoSlice[0].ID,
+			SourceID:  edge.SourceID + ":" + sourceUUID,
+			TargetID:  edge.TargetID + ":" + targetUUID,
 			Condition: edge.Condition,
 		}
 	}
@@ -222,6 +217,7 @@ func (g *graphInterpreter) executeNode(ctx workflow.Context, nodeID string, iter
 }
 
 // handleStartNode transitions to the single outgoing edge and marks itself Completed.
+// Note: iter is always nil here because a START node never appears inside a fan-out region.
 func (g *graphInterpreter) handleStartNode(ctx workflow.Context, nodeInfo *NodeInfo, outEdges []Edge, iter *iterationContext) error {
 	if len(outEdges) == 0 {
 		return fmt.Errorf("START node has no outgoing edges")
@@ -467,12 +463,15 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 			return uuid.NewString()
 		}).Get(&groupKey)
 
+		failureMode := FailureModeFailFast
+		if joinNode := g.nodes[cfg.PairedJoinID]; joinNode != nil && joinNode.DynamicJoin != nil && joinNode.DynamicJoin.FailureMode != "" {
+			failureMode = joinNode.DynamicJoin.FailureMode
+		}
+
 		inv := &splitInvocation{
-			groupKey:      groupKey,
-			pairedJoinID:  cfg.PairedJoinID,
 			expected:      n,
 			branchResults: make([]map[string]any, n),
-			failureMode:   defaultIfEmpty(g.nodes[cfg.PairedJoinID].DynamicJoin.FailureMode, FailureModeFailFast),
+			failureMode:   failureMode,
 		}
 		g.splitInvocations[node.ID] = inv
 
@@ -500,12 +499,10 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 				GroupItemIndex: idx,
 				Item:           itemAt(items, idx),
 				Local:          make(map[string]any),
-				PairedJoinID:   cfg.PairedJoinID,
 				IterationKey:   defaultIfEmpty(cfg.IterationKey, "_iter"),
 			}
 			workflow.Go(ctx, func(c workflow.Context) {
-				g.edgeTokens[firstEdge.ID]++
-				err := g.executeNode(c, firstEdge.TargetID, branchIter)
+				err := g.transitionTo(c, firstEdge, branchIter)
 				// Capture branch's final local state for aggregation
 				inv.branchResults[idx] = branchIter.Local
 				settable.Set(nil, err)
@@ -536,7 +533,9 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 			}
 			return firstErr
 		}
-		return nil
+
+		// All branches successfully completed -> safe to aggregate results and transition out
+		return g.completeDynamicJoin(ctx, node.ID, cfg.PairedJoinID, inv)
 
 	case GatewayTypeDynamicJoin:
 		cfg := node.DynamicJoin
@@ -549,21 +548,15 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 		}
 		inv.completed++
 
-		// Update or create per-iteration NodeInfo for this join
+		// Record arrival for this branch's parallel join node state
 		iterJoinInfo := g.ensureInstanceNodeInfo(ctx, node.ID, iter)
 		if iterJoinInfo != nil {
 			iterJoinInfo.Status = NodeStatusCompleted
 			iterJoinInfo.UpdatedAt = workflow.Now(ctx)
 		}
 
-		if inv.completed < inv.expected {
-			// Wait — other branches still in flight. This branch's goroutine
-			// returns; the split's f.Get will keep waiting for siblings.
-			return nil
-		}
-
-		// Last branch: finalize and transition out of the join.
-		return g.completeDynamicJoin(ctx, cfg.PairedSplitID, node.ID, inv)
+		// Join blocks. Transition is handled in the DYNAMIC_SPLIT epilogue.
+		return nil
 
 	default:
 		return fmt.Errorf("unknown gateway type: %v", node.GatewayType)
@@ -657,7 +650,7 @@ func (g *graphInterpreter) ensureInstanceNodeInfo(
 	for len(instances) <= iter.GroupItemIndex {
 		instances = append(instances, nil)
 	}
-	if instances[iter.GroupItemIndex] == nil || (iter.GroupItemIndex == 0 && instances[0].GroupKey == "") {
+	if instances[iter.GroupItemIndex] == nil || instances[iter.GroupItemIndex].GroupKey == "" {
 		template := g.nodes[templateNodeID]
 		instances[iter.GroupItemIndex] = &NodeInfo{
 			ID:             fmt.Sprintf("%s:%s:%d", templateNodeID, iter.GroupKey, iter.GroupItemIndex),

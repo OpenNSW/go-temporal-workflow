@@ -1,6 +1,9 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // validateDefinition checks that the workflow definition forms a valid DAG
 // with correctly configured split and join gateways:
@@ -12,6 +15,12 @@ import "fmt"
 func validateDefinition(def WorkflowDefinition) error {
 	nodes := make(map[string]Node)
 	for _, n := range def.Nodes {
+		if strings.Contains(n.ID, ":") {
+			return fmt.Errorf("node ID %q cannot contain ':' character", n.ID)
+		}
+		if strings.Contains(n.TaskTemplateID, ":") {
+			return fmt.Errorf("node %s task_template_id %q cannot contain ':' character", n.ID, n.TaskTemplateID)
+		}
 		nodes[n.ID] = n
 	}
 
@@ -51,7 +60,7 @@ func validateDefinition(def WorkflowDefinition) error {
 		}
 	}
 
-	// 1. & 2. Bijective pairing validation
+	// 1. Bijective pairing validation
 	for sID, jID := range splitToJoin {
 		jNode, ok := joins[jID]
 		if !ok {
@@ -68,7 +77,7 @@ func validateDefinition(def WorkflowDefinition) error {
 		}
 	}
 
-	// 6. Exactly one of CountVariable / ItemsVariable is set
+	// 2. Exactly one of CountVariable / ItemsVariable is set
 	for _, n := range splits {
 		cfg := n.DynamicSplit
 		if (cfg.CountVariable == "" && cfg.ItemsVariable == "") || (cfg.CountVariable != "" && cfg.ItemsVariable != "") {
@@ -101,7 +110,7 @@ func validateDefinition(def WorkflowDefinition) error {
 			}
 			for _, e := range outEdges[curr] {
 				if nodes[e.TargetID].GatewayType == GatewayTypeDynamicSplit {
-					// 5. Nested fan-outs are rejected
+					// 4. No nested fan-out blocks.
 					return fmt.Errorf("nested dynamic splits are not supported: split %s is nested inside split %s", e.TargetID, sID)
 				}
 				if err := findRegion(e.TargetID); err != nil {
@@ -126,7 +135,7 @@ func validateDefinition(def WorkflowDefinition) error {
 			return fmt.Errorf("join %s must have exactly one incoming edge from inside its paired split region, found %d", jID, inToJoinFromRegion)
 		}
 
-		// 4. Single-entry, single-exit subgraph validation.
+		// 5. Single-entry, single-exit subgraph topology for the region.
 		for _, rNodeID := range regionNodes {
 			for _, e := range inEdges[rNodeID] {
 				if e.SourceID != sID && !visited[e.SourceID] {
