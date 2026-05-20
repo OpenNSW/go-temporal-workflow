@@ -62,7 +62,11 @@ func parseActivityID(activityID string) (templateNodeID, groupKey string, groupI
 	parts := strings.Split(activityID, ":")
 	switch len(parts) {
 	case 3: // fan-out instance: "<template>:<groupKey>:<index>"
-		idx, _ := strconv.Atoi(parts[2])
+		idx, err := strconv.Atoi(parts[2])
+		if err != nil {
+			slog.Error("invalid group index for activity: " + activityID + " error: " + err.Error())
+			return activityID, "", 0
+		}
 		return parts[0], parts[1], idx
 	case 2: // standard node: "<template>:<uuid>"
 		return parts[0], "", 0
