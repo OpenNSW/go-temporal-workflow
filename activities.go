@@ -15,7 +15,7 @@ type Activities struct {
 	// - For synchronous execution, it should return a nil error with a map containing the results.
 	// - For asynchronous execution, it should return a nil map and an ErrResultPending error,
 	//   which pauses the workflow activity until an external handler triggers TaskDone.
-	ExecuteTaskActivityHandler       func(TaskPayload) (map[string]any, error)
+	ExecuteTaskActivityHandler func(TaskPayload) (map[string]any, error)
 
 	// WorkflowCompletedActivityHandler is invoked when the overall workflow execution succeeds and reaches
 	// an End node. It receives the workflow ID and the final accumulated workflow variables, allowing the
