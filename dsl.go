@@ -33,6 +33,20 @@ const (
 // Core structural execution constants
 const (
 	DefaultIterationKey = "_iter"
+
+	// Keys parsed from the input items collection
+	ItemTemplateIDKey = "template_id"
+	ItemBranchIDKey   = "branch_id"
+	ItemPayloadKey    = "payload"
+
+	// Keys injected into the child's workspace variables
+	VarSplitNodeID      = "_split_node_id"
+	VarParentWorkflowID = "_parent_workflow_id"
+
+	// Iteration context sub-keys
+	IterIndexKey    = "index"
+	IterBranchIDKey = "branch_id"
+	IterInputKey    = "input"
 )
 
 // SplitTaskConfig defines dynamic fan-out execution configuration.

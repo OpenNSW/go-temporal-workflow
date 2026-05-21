@@ -399,10 +399,10 @@ func (g *graphInterpreter) handleSplitTaskNode(ctx workflow.Context, nodeInfo *N
 
 		templateID := node.TaskTemplateID
 		if config.Mode == SplitModeDifferentTemplates {
-			templateID, _ = branchItem["template_id"].(string)
+			templateID, _ = branchItem[ItemTemplateIDKey].(string)
 		}
-		branchID, _ := branchItem["branch_id"].(string)
-		payload, _ := branchItem["payload"].(map[string]any)
+		branchID, _ := branchItem[ItemBranchIDKey].(string)
+		payload, _ := branchItem[ItemPayloadKey].(map[string]any)
 
 		if templateID == "" || branchID == "" {
 			return fmt.Errorf("index point %d requires non-empty template_id (static or dynamic) and branch_id configurations", i)
@@ -419,11 +419,11 @@ func (g *graphInterpreter) handleSplitTaskNode(ctx workflow.Context, nodeInfo *N
 
 		// Configure targeted isolation environment parameters for child execution workspace
 		childVars := map[string]any{
-			"_split_node_id": node.ID,
+			VarSplitNodeID: node.ID,
 			iterKey: map[string]any{
-				"index":     i,
-				"branch_id": branchID,
-				"input":     payload,
+				IterIndexKey:    i,
+				IterBranchIDKey: branchID,
+				IterInputKey:    payload,
 			},
 		}
 
