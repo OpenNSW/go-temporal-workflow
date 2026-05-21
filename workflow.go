@@ -20,6 +20,7 @@ type graphInterpreter struct {
 	inEdges  map[string][]Edge
 }
 
+// GraphInterpreterWorkflow is the entry point for the Temporal workflow that interprets a graph definition.
 func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, initialWorkflowVariables map[string]any) (*WorkflowInstance, error) {
 	if initialWorkflowVariables == nil {
 		initialWorkflowVariables = make(map[string]any)
@@ -36,13 +37,15 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 
 	// Generate UUIDs deterministically
 	var generatedUUIDs map[string]string
-	workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	if err := workflow.SideEffect(ctx, func(_ workflow.Context) interface{} {
 		uuids := make(map[string]string)
 		for _, node := range def.Nodes {
 			uuids[node.ID] = uuid.NewString()
 		}
 		return uuids
-	}).Get(&generatedUUIDs)
+	}).Get(&generatedUUIDs); err != nil {
+		return nil, fmt.Errorf("failed to generate UUIDs via SideEffect: %w", err)
+	}
 
 	for _, node := range def.Nodes {
 		instance.NodeInfo[node.ID] = &NodeInfo{
@@ -83,9 +86,11 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 	}
 	interp.buildIndexes()
 
-	workflow.SetQueryHandler(ctx, "GetStatus", func() (*WorkflowInstance, error) {
+	if err := workflow.SetQueryHandler(ctx, "GetStatus", func() (*WorkflowInstance, error) {
 		return instance, nil
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to set GetStatus query handler: %w", err)
+	}
 
 	signalChan := workflow.GetSignalChannel(ctx, "TaskUpdateSignal")
 	workflow.Go(ctx, func(ctx workflow.Context) {

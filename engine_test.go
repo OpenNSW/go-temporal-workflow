@@ -154,7 +154,7 @@ func TestCustomsExportLCLFlow(t *testing.T) {
 	initialWorkflowVariables := make(map[string]any)
 	emptyMap := map[string]any{}
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -207,7 +207,7 @@ func TestParallelJoinFlow(t *testing.T) {
 	initialWorkflowVariables := make(map[string]any)
 	emptyMap := map[string]any{}
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -251,7 +251,7 @@ func TestTaskNodeAppliesInputMapping(t *testing.T) {
 		"global_user_name":  "Alice",
 	}
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -286,7 +286,7 @@ func TestTaskNodeWithEmptyInputMappingPassesNoInputs(t *testing.T) {
 		"global_user_name":  "Alice",
 	}
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -316,7 +316,7 @@ func TestTaskNodeFailsWhenInputKeyMissing(t *testing.T) {
 		"global_user_email": "user@example.com",
 	}
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -336,7 +336,7 @@ func TestNodeOutputFlowsIntoSubsetInputMapping(t *testing.T) {
 	err := json.Unmarshal([]byte(nodeOutputToSubsetInputWorkflowJSON), &def)
 	require.NoError(t, err)
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -379,7 +379,7 @@ func TestEdgesAreReturnedInWorkflowInstance(t *testing.T) {
 	err := json.Unmarshal([]byte(customsWorkflowJSON), &def)
 	require.NoError(t, err)
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
@@ -425,7 +425,7 @@ func TestEdgesReferenceValidNodeInstanceIDs(t *testing.T) {
 	err := json.Unmarshal([]byte(parallelWorkflowJSON), &def)
 	require.NoError(t, err)
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 
