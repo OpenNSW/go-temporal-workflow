@@ -276,8 +276,8 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithCrossBranchBroadcast() {
 			{
 				ID:             "p_emit",
 				Type:           NodeTypeTask,
-				TaskTemplateID: "sys:emit_signal",
-				InputMapping:   map[string]string{"_iter.input.signal_to_emit": "signal_name"},
+				TaskTemplateID: SysTaskEmitSignal,
+				InputMapping:   map[string]string{"_iter.input.signal_to_emit": InputSignalName},
 			},
 			{ID: "p_end", Type: NodeTypeEnd},
 		},
@@ -296,8 +296,8 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithCrossBranchBroadcast() {
 			{
 				ID:             "h_wait",
 				Type:           NodeTypeTask,
-				TaskTemplateID: "sys:wait_for_signal",
-				InputMapping:   map[string]string{"_iter.input.signal_to_wait": "signal_name"},
+				TaskTemplateID: SysTaskWaitForSignal,
+				InputMapping:   map[string]string{"_iter.input.signal_to_wait": InputSignalName},
 				OutputMapping:  map[string]string{"phyto_status": "phyto_status"},
 			},
 			{
