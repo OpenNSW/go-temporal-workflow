@@ -8,6 +8,18 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// --- Configuration & Defaults ---
+
+var (
+	// DefaultMaxParallelTasks is the default upper limit on the number of parallel branches
+	// allowed in a single DYNAMIC_SPLIT. If exceeded, the engine logs an error and fails the execution.
+	DefaultMaxParallelTasks = 1000
+
+	// DefaultWarnParallelTasks is the default threshold above which the engine logs a warning
+	// for high concurrency in a DYNAMIC_SPLIT.
+	DefaultWarnParallelTasks = 500
+)
+
 // --- Types ---
 
 // splitInvocation tracks runtime state for an active DYNAMIC_SPLIT invocation.
@@ -37,7 +49,7 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 		return fmt.Errorf("DYNAMIC_SPLIT node %s missing dynamic_split config", node.ID)
 	}
 
-	n, items, err := g.resolveIterationSize(cfg)
+	n, items, err := g.resolveIterationSize(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -76,10 +88,13 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 	}
 	firstEdge := outEdges[0]
 
+	cancelCtx, cancelFunc := workflow.WithCancel(ctx)
+	defer cancelFunc()
+
 	var futures []workflow.Future
 	for i := 0; i < n; i++ {
 		idx := i
-		f, settable := workflow.NewFuture(ctx)
+		f, settable := workflow.NewFuture(cancelCtx)
 		branchIter := &iterationContext{
 			GroupKey:       groupKey,
 			GroupItemIndex: idx,
@@ -87,7 +102,7 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 			Local:          make(map[string]any),
 			IterationKey:   defaultIfEmpty(cfg.IterationKey, "_iter"),
 		}
-		workflow.Go(ctx, func(c workflow.Context) {
+		workflow.Go(cancelCtx, func(c workflow.Context) {
 			err := g.transitionTo(c, firstEdge, branchIter)
 			// Capture branch's final local state for aggregation
 			inv.branchResults[idx] = branchIter.Local
@@ -105,6 +120,7 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 		selector.AddFuture(f, func(f workflow.Future) {
 			if err := f.Get(ctx, nil); err != nil && firstErr == nil {
 				firstErr = err
+				cancelFunc()
 			}
 		})
 	}
@@ -137,13 +153,12 @@ func (g *graphInterpreter) handleDynamicJoin(ctx workflow.Context, nodeInfo *Nod
 	}
 
 	// Record arrival for this branch's parallel join node state
-	iterJoinInfo := g.ensureInstanceNodeInfo(ctx, node.ID, iter)
-	if iterJoinInfo != nil {
-		iterJoinInfo.Status = NodeStatusCompleted
-		iterJoinInfo.UpdatedAt = workflow.Now(ctx)
-	}
+	nodeInfo.Status = NodeStatusCompleted
+	nodeInfo.UpdatedAt = workflow.Now(ctx)
 
-	// Join blocks. Transition is handled in the DYNAMIC_SPLIT epilogue.
+	// Returning nil here without transitioning terminates this branch's goroutine.
+	// The overall transition past the DYNAMIC_JOIN node is handled by completeDynamicJoin,
+	// which is called from the DYNAMIC_SPLIT epilogue after all branch futures resolve.
 	return nil
 }
 
@@ -174,10 +189,11 @@ func (g *graphInterpreter) completeDynamicJoin(
 	// Mark the join's first (or only) NodeInfo entry as completed for the
 	// "outer" workflow view.
 	joinNodeInfo := g.ensureInstanceNodeInfo(ctx, joinID, nil)
-	if joinNodeInfo != nil {
-		joinNodeInfo.Status = NodeStatusCompleted
-		joinNodeInfo.UpdatedAt = workflow.Now(ctx)
+	if joinNodeInfo == nil {
+		return fmt.Errorf("DYNAMIC_JOIN %s: node info not found", joinID)
 	}
+	joinNodeInfo.Status = NodeStatusCompleted
+	joinNodeInfo.UpdatedAt = workflow.Now(ctx)
 
 	delete(g.splitInvocations, splitID)
 
@@ -249,36 +265,49 @@ func (g *graphInterpreter) mapDynamicOutputs(iter *iterationContext, globalKey s
 
 // --- Iteration helpers ---
 
-func (g *graphInterpreter) resolveIterationSize(cfg *DynamicSplitConfig) (int, []any, error) {
+func (g *graphInterpreter) resolveIterationSize(ctx workflow.Context, cfg *DynamicSplitConfig) (int, []any, error) {
 	if cfg.CountVariable != "" && cfg.ItemsVariable != "" {
 		return 0, nil, fmt.Errorf("dynamic split: cannot set both count_variable and items_variable")
 	}
+	var n int
+	var items []any
 	if cfg.CountVariable != "" {
 		v, ok := getNestedKey(g.instance.WorkflowVariables, cfg.CountVariable)
 		if !ok {
 			return 0, nil, fmt.Errorf("dynamic split: count_variable %q not found", cfg.CountVariable)
 		}
-		n, err := toInt(v)
+		var err error
+		n, err = toInt(v)
 		if err != nil {
 			return 0, nil, fmt.Errorf("dynamic split: count_variable %q: %w", cfg.CountVariable, err)
 		}
 		if n < 0 {
 			return 0, nil, fmt.Errorf("dynamic split: count_variable %q is negative", cfg.CountVariable)
 		}
-		return n, nil, nil
-	}
-	if cfg.ItemsVariable != "" {
+	} else if cfg.ItemsVariable != "" {
 		v, ok := getNestedKey(g.instance.WorkflowVariables, cfg.ItemsVariable)
 		if !ok {
 			return 0, nil, fmt.Errorf("dynamic split: items_variable %q not found", cfg.ItemsVariable)
 		}
-		items, ok := v.([]any)
+		items, ok = v.([]any)
 		if !ok {
 			return 0, nil, fmt.Errorf("dynamic split: items_variable %q is not []any", cfg.ItemsVariable)
 		}
-		return len(items), items, nil
+		n = len(items)
+	} else {
+		return 0, nil, fmt.Errorf("dynamic split: must set one of count_variable / items_variable")
 	}
-	return 0, nil, fmt.Errorf("dynamic split: must set one of count_variable / items_variable")
+
+	logger := workflow.GetLogger(ctx)
+	if n > DefaultMaxParallelTasks {
+		logger.Error("dynamic split: exceeded maximum parallel tasks limit", "limit", DefaultMaxParallelTasks, "actual", n)
+		return 0, nil, fmt.Errorf("dynamic split: exceeded maximum parallel tasks limit of %d (actual: %d)", DefaultMaxParallelTasks, n)
+	}
+	if n > DefaultWarnParallelTasks {
+		logger.Warn("dynamic split: high number of parallel tasks", "warning_threshold", DefaultWarnParallelTasks, "actual", n)
+	}
+
+	return n, items, nil
 }
 
 // ensureInstanceNodeInfo returns or creates a NodeInfo entry for a given node.

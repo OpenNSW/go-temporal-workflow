@@ -844,3 +844,15 @@ func requireResultSlice(t *testing.T, instance WorkflowInstance, key string, wan
 	require.Len(t, slice, wantLen)
 	return slice
 }
+
+func TestDynamicSplitScaleLimits(t *testing.T) {
+	t.Run("default limit exceeded", func(t *testing.T) {
+		env, def := newDynamicEnv(t, dynamicSplitCountWorkflowJSON)
+		initialWorkflowVariables := map[string]any{"containerCount": DefaultMaxParallelTasks + 1}
+		env.ExecuteWorkflow(GraphInterpreterWorkflow, def, initialWorkflowVariables)
+		require.True(t, env.IsWorkflowCompleted())
+		require.Error(t, env.GetWorkflowError())
+		require.Contains(t, env.GetWorkflowError().Error(), "exceeded maximum parallel tasks limit")
+	})
+}
+

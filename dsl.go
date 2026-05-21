@@ -33,13 +33,15 @@ type DynamicSplitConfig struct {
 
 	// CountVariable is a dot-path into WorkflowVariables resolving to an int (or
 	// numeric type convertible to int). The engine spawns this many branches.
-	// Mutually exclusive with ItemsVariable.
+	// Mutually exclusive with ItemsVariable. There is a hard cap of
+	// DefaultMaxParallelTasks (1000) parallel tasks.
 	CountVariable string `json:"count_variable,omitempty"`
 
 	// ItemsVariable is a dot-path into WorkflowVariables resolving to a []any.
 	// The engine spawns len(items) branches, exposing items[i] to branch i via
 	// the iteration context (see IterationKey).
-	// Mutually exclusive with CountVariable.
+	// Mutually exclusive with CountVariable. There is a hard cap of
+	// DefaultMaxParallelTasks (1000) parallel tasks.
 	ItemsVariable string `json:"items_variable,omitempty"`
 
 	// IterationKey is the WorkflowVariables key under which the engine exposes
@@ -72,7 +74,7 @@ type DynamicJoinConfig struct {
 
 const (
 	// FailureModeFailFast specifies that any single branch failure immediately fails the workflow.
-	FailureModeFailFast   = "FAIL_FAST"
+	FailureModeFailFast = "FAIL_FAST"
 	// FailureModeCollectAll specifies that the engine waits for all parallel branches to complete;
 	// it will report failure if any branch failed, but still exposes successful branch outputs.
 	FailureModeCollectAll = "COLLECT_ALL"
