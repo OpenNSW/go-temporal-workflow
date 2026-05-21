@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 )
+
 // graphInterpreter holds the state for a single workflow execution.
 type graphInterpreter struct {
 	def              WorkflowDefinition

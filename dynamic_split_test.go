@@ -218,7 +218,7 @@ func newDynamicEnv(t *testing.T, jsonDef string) (*testsuite.TestWorkflowEnviron
 	var def WorkflowDefinition
 	require.NoError(t, json.Unmarshal([]byte(jsonDef), &def))
 
-	acts := &EngineActivities{}
+	acts := &Activities{}
 	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 	return env, def
@@ -855,4 +855,3 @@ func TestDynamicSplitScaleLimits(t *testing.T) {
 		require.Contains(t, env.GetWorkflowError().Error(), "exceeded maximum parallel tasks limit")
 	})
 }
-
