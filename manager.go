@@ -15,6 +15,7 @@ import (
 // ExecutionStatus defines the allowed states for a workflow instance.
 type ExecutionStatus string
 
+// Execution status constants for workflows.
 const (
 	StatusRunning   ExecutionStatus = "RUNNING"
 	StatusCompleted ExecutionStatus = "COMPLETED"
@@ -37,8 +38,10 @@ type TaskPayload struct {
 	Inputs map[string]any
 }
 
+// NodeStatus represents the status of a specific workflow node.
 type NodeStatus string
 
+// Node status constants.
 const (
 	NodeStatusNotStarted NodeStatus = "NOT_STARTED"
 	NodeStatusRunning    NodeStatus = "RUNNING"
@@ -130,6 +133,7 @@ type Manager interface {
 	GetStatus(ctx context.Context, workflowID string) (*WorkflowInstance, error)
 }
 
+// TemporalManager extends the Manager interface with worker control methods.
 type TemporalManager interface {
 	Manager
 
@@ -148,6 +152,7 @@ type temporalManagerImpl struct {
 	taskQueue      string
 }
 
+// NewTemporalManager creates a new instance of TemporalManager.
 func NewTemporalManager(
 	c client.Client,
 	taskQueue string,
@@ -166,7 +171,7 @@ func NewTemporalManager(
 
 	w.RegisterWorkflowWithOptions(GraphInterpreterWorkflow, workflow.RegisterOptions{Name: "GraphInterpreterWorkflow"})
 
-	acts := &EngineActivities{ExecuteTaskActivityHandler: taskHandler, WorkflowCompletedActivityHandler: completionHandler}
+	acts := &Activities{ExecuteTaskActivityHandler: taskHandler, WorkflowCompletedActivityHandler: completionHandler}
 	w.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	w.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 

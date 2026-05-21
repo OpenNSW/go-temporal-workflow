@@ -1,8 +1,9 @@
 package engine
 
-// Core Node Types
+// NodeType represents the type of a workflow node (e.g. START, END, TASK, GATEWAY).
 type NodeType string
 
+// Core node types supported by the engine.
 const (
 	NodeTypeStart   NodeType = "START"
 	NodeTypeEnd     NodeType = "END"
@@ -10,9 +11,10 @@ const (
 	NodeTypeGateway NodeType = "GATEWAY"
 )
 
-// Gateway Types
+// GatewayType represents the type of a gateway controlling execution flow.
 type GatewayType string
 
+// Gateway types controlling branching and merging.
 const (
 	GatewayTypeExclusiveSplit GatewayType = "EXCLUSIVE_SPLIT" // XOR Split
 	GatewayTypeParallelSplit  GatewayType = "PARALLEL_SPLIT"  // AND Split
