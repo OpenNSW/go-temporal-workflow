@@ -157,7 +157,8 @@ func NewTemporalManager(
 	c client.Client,
 	taskQueue string,
 	taskHandler TaskActivationHandler,
-	completionHandler WorkflowCompletionHandler) TemporalManager {
+	completionHandler WorkflowCompletionHandler,
+	definitionHandler func(templateID string) (WorkflowDefinition, error)) TemporalManager {
 	if strings.TrimSpace(taskQueue) == "" {
 		panic("taskQueue must not be empty")
 	}
@@ -171,9 +172,14 @@ func NewTemporalManager(
 
 	w.RegisterWorkflowWithOptions(GraphInterpreterWorkflow, workflow.RegisterOptions{Name: "GraphInterpreterWorkflow"})
 
-	acts := &Activities{ExecuteTaskActivityHandler: taskHandler, WorkflowCompletedActivityHandler: completionHandler}
+	acts := &Activities{
+		ExecuteTaskActivityHandler:       taskHandler,
+		WorkflowCompletedActivityHandler: completionHandler,
+		FetchWorkflowDefinitionHandler:   definitionHandler,
+	}
 	w.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	w.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+	w.RegisterActivityWithOptions(acts.FetchWorkflowDefinitionActivity, activity.RegisterOptions{Name: "FetchWorkflowDefinitionActivity"})
 
 	m.worker = w
 	return m

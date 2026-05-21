@@ -15,7 +15,7 @@ func TestNewTemporalManagerPanicsWithEmptyTaskQueue(t *testing.T) {
 	for _, taskQueue := range []string{"", "   "} {
 		t.Run(fmt.Sprintf("%q", taskQueue), func(t *testing.T) {
 			require.PanicsWithValue(t, "taskQueue must not be empty", func() {
-				NewTemporalManager(nil, taskQueue, nil, nil)
+				NewTemporalManager(nil, taskQueue, nil, nil, nil)
 			})
 		})
 	}

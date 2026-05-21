@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -172,6 +173,8 @@ func (g *graphInterpreter) executeNode(ctx workflow.Context, nodeID string) erro
 		err = g.handleTaskNode(ctx, nodeInfo, node, outEdges)
 	case NodeTypeGateway:
 		err = g.handleGatewayNode(ctx, nodeInfo, node, outEdges)
+	case NodeTypeSplitTask:
+		err = g.handleSplitTaskNode(ctx, nodeInfo, node, outEdges)
 	case NodeTypeEnd:
 		err = g.handleEndNode(ctx, nodeInfo)
 	default:
@@ -345,4 +348,150 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 	default:
 		return fmt.Errorf("unknown gateway type: %v", node.GatewayType)
 	}
+}
+
+// handleSplitTaskNode executes the parallel branch fan-out child workflow execution.
+func (g *graphInterpreter) handleSplitTaskNode(ctx workflow.Context, nodeInfo *NodeInfo, node *Node, outEdges []Edge) error {
+	config := node.SplitTask
+	if config == nil {
+		return fmt.Errorf("split task configuration is missing on node %s", node.ID)
+	}
+
+	// 1. Resolve Items collection from global workflow context
+	itemsRaw, exists := getNestedKey(g.instance.WorkflowVariables, config.ItemsVariable)
+	if !exists {
+		return fmt.Errorf("items variable '%s' not found in workflow variables", config.ItemsVariable)
+	}
+
+	var branchesData []any
+	if itemsRaw != nil {
+		if val, ok := itemsRaw.([]any); ok {
+			branchesData = val
+		} else {
+			// Convert slice of any concrete type to []any
+			switch reflectVal := reflect.ValueOf(itemsRaw); reflectVal.Kind() {
+			case reflect.Slice:
+				branchesData = make([]any, reflectVal.Len())
+				for idx := 0; idx < reflectVal.Len(); idx++ {
+					branchesData[idx] = reflectVal.Index(idx).Interface()
+				}
+			default:
+				return fmt.Errorf("items variable '%s' is not a valid list type", config.ItemsVariable)
+			}
+		}
+	}
+
+	iterKey := config.IterationKey
+	if iterKey == "" {
+		iterKey = DefaultIterationKey
+	}
+
+	parentInfo := workflow.GetInfo(ctx)
+	activeBranches := make(map[string]workflow.ChildWorkflowFuture)
+	branchIndexes := make(map[string]int)
+
+	// 2. Iterate dynamically, load templates via Activity, and spawn child interpreters
+	for i, itemRaw := range branchesData {
+		branchItem, ok := itemRaw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("index point %d inside branch resolution array is invalid layout", i)
+		}
+
+		templateID := node.TaskTemplateID
+		if config.Mode == SplitModeDifferentTemplates {
+			templateID, _ = branchItem["template_id"].(string)
+		}
+		branchID, _ := branchItem["branch_id"].(string)
+		payload, _ := branchItem["payload"].(map[string]any)
+
+		if templateID == "" || branchID == "" {
+			return fmt.Errorf("index point %d requires non-empty template_id (static or dynamic) and branch_id configurations", i)
+		}
+
+		// Execute Activity on-the-fly to retrieve sub-graph definition
+		var branchGraphDef WorkflowDefinition
+		err := workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 15 * time.Second,
+		}), "FetchWorkflowDefinitionActivity", templateID).Get(ctx, &branchGraphDef)
+		if err != nil {
+			return fmt.Errorf("boundary lifecycle error hydrating definition graph for template %s: %w", templateID, err)
+		}
+
+		// Configure targeted isolation environment parameters for child execution workspace
+		childVars := map[string]any{
+			"_split_node_id": node.ID,
+			iterKey: map[string]any{
+				"index":     i,
+				"branch_id": branchID,
+				"input":     payload,
+			},
+		}
+
+		deterministicChildID := fmt.Sprintf("%s-%s-%s", parentInfo.WorkflowExecution.ID, node.ID, branchID)
+		childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+			WorkflowID: deterministicChildID,
+		})
+
+		// Recursively spin up core interpreter executing target hydrated sub-graph schema
+		future := workflow.ExecuteChildWorkflow(childCtx, "GraphInterpreterWorkflow", branchGraphDef, childVars)
+		activeBranches[deterministicChildID] = future
+		branchIndexes[deterministicChildID] = i
+	}
+
+	// 3. Initialize the Interactive Event Multiplexor Selector
+	selector := workflow.NewSelector(ctx)
+
+	completedCount := 0
+	totalBranches := len(activeBranches)
+	aggregatedResults := make([]map[string]any, totalBranches)
+	var executionError error
+
+	// 4. Register active sub-workflow execution handles on monitoring tracking hooks
+	for cid, fut := range activeBranches {
+		f := fut
+		targetID := cid
+
+		selector.AddFuture(f, func(wf workflow.Future) {
+			var childOutput *WorkflowInstance
+			err := wf.Get(ctx, &childOutput)
+
+			if err != nil {
+				executionError = fmt.Errorf("dynamic execution track %s halted abnormally: %w", targetID, err)
+			} else if childOutput != nil {
+				// Collect results chronologically mapped back to setup registry indexes
+				aggregatedResults[branchIndexes[targetID]] = childOutput.WorkflowVariables
+			}
+
+			delete(activeBranches, targetID)
+			completedCount++
+		})
+	}
+
+	// 5. Block Execution thread loop until all tracks successfully resolve
+	for completedCount < totalBranches {
+		selector.Select(ctx) // Suspends workflow thread awaiting state activation triggers cleanly
+
+		if executionError != nil && config.FailureMode == FailureModeFailFast {
+			nodeInfo.Status = NodeStatusFailed
+			return executionError
+		}
+	}
+
+	if executionError != nil && config.FailureMode == FailureModeCollectAll {
+		nodeInfo.Status = NodeStatusFailed
+		return executionError
+	}
+
+	// 6. Commit variable mutation changes back to the primary context map layer
+	if config.ResultsVariable != "" {
+		setNestedKey(g.instance.WorkflowVariables, config.ResultsVariable, aggregatedResults)
+	}
+
+	nodeInfo.Status = NodeStatusCompleted
+	nodeInfo.UpdatedAt = workflow.Now(ctx)
+
+	if len(outEdges) > 0 {
+		return g.transitionTo(ctx, outEdges[0])
+	}
+	return nil
 }
