@@ -37,7 +37,7 @@ func GraphInterpreterWorkflow(ctx workflow.Context, def WorkflowDefinition, init
 
 	// Generate UUIDs deterministically
 	var generatedUUIDs map[string]string
-	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+if err := workflow.SideEffect(ctx, func(_ workflow.Context) interface{} {
 		uuids := make(map[string]string)
 		for _, node := range def.Nodes {
 			uuids[node.ID] = uuid.NewString()
