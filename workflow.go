@@ -391,7 +391,7 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 	case GatewayTypeDynamicSplit:
 		return g.handleDynamicSplit(ctx, nodeInfo, node, outEdges)
 	case GatewayTypeDynamicJoin:
-		return g.handleDynamicJoin(ctx, nodeInfo, node, iter)
+		return g.handleDynamicJoin(ctx, nodeInfo, node)
 
 	default:
 		return fmt.Errorf("unknown gateway type: %v", node.GatewayType)

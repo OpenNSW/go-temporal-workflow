@@ -57,9 +57,11 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 	// Determine group key deterministically. Use SideEffect so the UUID is
 	// recorded in workflow history and replays consistently.
 	var groupKey string
-	workflow.SideEffect(ctx, func(workflow.Context) any {
+	if err := workflow.SideEffect(ctx, func(_ workflow.Context) any {
 		return uuid.NewString()
-	}).Get(&groupKey)
+	}).Get(&groupKey); err != nil {
+		return fmt.Errorf("failed to generate group key via SideEffect: %w", err)
+	}
 
 	failureMode := FailureModeFailFast
 	if joinNode := g.nodes[cfg.PairedJoinID]; joinNode != nil && joinNode.DynamicJoin != nil && joinNode.DynamicJoin.FailureMode != "" {
@@ -143,7 +145,7 @@ func (g *graphInterpreter) handleDynamicSplit(ctx workflow.Context, nodeInfo *No
 
 // handleDynamicJoin records a branch arrival at the join. The actual transition
 // past the join is handled by the DYNAMIC_SPLIT epilogue after all futures resolve.
-func (g *graphInterpreter) handleDynamicJoin(ctx workflow.Context, nodeInfo *NodeInfo, node *Node, iter *iterationContext) error {
+func (g *graphInterpreter) handleDynamicJoin(ctx workflow.Context, nodeInfo *NodeInfo, node *Node) error {
 	cfg := node.DynamicJoin
 	if cfg == nil {
 		return fmt.Errorf("DYNAMIC_JOIN node %s missing dynamic_join config", node.ID)

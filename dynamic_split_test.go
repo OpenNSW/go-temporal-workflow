@@ -246,7 +246,7 @@ func TestDynamicSplitAndJoin(t *testing.T) {
 	}
 
 	env.OnActivity("ExecuteTaskActivity", mock.Anything, "PROCESS_CONTAINER", mock.Anything).
-		Return(func(ctx context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
+		Return(func(_ context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
 			cName := inputs["container_name"].(string)
 			return map[string]any{"status": "processed-" + cName}, nil
 		}).Times(3)
@@ -296,7 +296,7 @@ func TestDynamicSplitCountVariable(t *testing.T) {
 	// Each branch derives its result purely from _iter.index, which proves the
 	// engine handed each branch a distinct, correct index.
 	env.OnActivity("ExecuteTaskActivity", mock.Anything, "PROCESS_CONTAINER", mock.Anything).
-		Return(func(ctx context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
+		Return(func(_ context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
 			idx, err := toInt(inputs["index"]) // serialized numbers arrive as float64
 			if err != nil {
 				return nil, fmt.Errorf("index not numeric: %w", err)
@@ -423,7 +423,7 @@ func TestDynamicSplitFailFast(t *testing.T) {
 
 	// A later branch (index 1) fails; the workflow must still fail.
 	env.OnActivity("ExecuteTaskActivity", mock.Anything, "PROCESS_CONTAINER", mock.Anything).
-		Return(func(ctx context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
+		Return(func(_ context.Context, templateID string, inputs map[string]any) (map[string]any, error) {
 			if inputs["container_name"] == "container-B" {
 				return nil, fmt.Errorf("failed branch B")
 			}

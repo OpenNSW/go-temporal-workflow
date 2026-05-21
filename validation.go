@@ -75,7 +75,8 @@ func validateDefinition(def WorkflowDefinition) error {
 
 	for _, n := range def.Nodes {
 		if n.Type == NodeTypeGateway {
-			if n.GatewayType == GatewayTypeDynamicSplit {
+			switch n.GatewayType {
+			case GatewayTypeDynamicSplit:
 				splits[n.ID] = n
 				if n.DynamicSplit == nil {
 					return fmt.Errorf("node %s has GatewayType DYNAMIC_SPLIT but is missing dynamic_split config", n.ID)
@@ -84,7 +85,7 @@ func validateDefinition(def WorkflowDefinition) error {
 					return fmt.Errorf("node %s dynamic_split config missing paired_join_id", n.ID)
 				}
 				splitToJoin[n.ID] = n.DynamicSplit.PairedJoinID
-			} else if n.GatewayType == GatewayTypeDynamicJoin {
+			case GatewayTypeDynamicJoin:
 				joins[n.ID] = n
 				if n.DynamicJoin == nil {
 					return fmt.Errorf("node %s has GatewayType DYNAMIC_JOIN but is missing dynamic_join config", n.ID)
