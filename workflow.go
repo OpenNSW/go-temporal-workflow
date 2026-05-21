@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -242,25 +243,75 @@ func (g *graphInterpreter) mapTaskOutputs(workflowVars map[string]any, outputMap
 }
 
 func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeInfo, node *Node, outEdges []Edge) error {
-	nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ActivityID:          nodeInfo.ID,
-		StartToCloseTimeout: 24 * time.Hour * 365,
-	})
-
 	inputs, err := g.mapTaskInputs(node.InputMapping)
 	if err != nil {
 		return err
 	}
 
 	var result map[string]any
-	err = workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, inputs).Get(ctx, &result)
-	if err != nil {
-		return err
-	}
 
-	err = g.mapTaskOutputs(g.instance.WorkflowVariables, node.OutputMapping, result)
-	if err != nil {
-		return err
+	switch node.TaskTemplateID {
+	case SysTaskWaitForSignal:
+		signalName, _ := inputs[InputSignalName].(string)
+		if signalName == "" {
+			return fmt.Errorf("wait_for_signal task requires a non-empty signal_name input")
+		}
+		signalChan := workflow.GetSignalChannel(ctx, signalName)
+		var signalData map[string]any
+		// Block execution until a matching signal event is posted to the channel
+		signalChan.Receive(ctx, &signalData)
+
+		// Hydrate incoming broadcast state keys back into local execution variables using standard OutputMapping
+		err = g.mapTaskOutputs(g.instance.WorkflowVariables, node.OutputMapping, signalData)
+		if err != nil {
+			return err
+		}
+
+	case SysTaskEmitSignal:
+		signalName, _ := inputs[InputSignalName].(string)
+		if signalName == "" {
+			return fmt.Errorf("emit_signal task requires a non-empty signal_name input")
+		}
+		payload, _ := inputs[InputPayload].(map[string]any)
+
+		parentWorkflowID, _ := g.instance.WorkflowVariables[VarParentWorkflowID].(string)
+		
+		var branchID string
+		if iterVal, ok := g.instance.WorkflowVariables[DefaultIterationKey]; ok && iterVal != nil {
+			if iterMap, ok := iterVal.(map[string]any); ok {
+				branchID, _ = iterMap[IterBranchIDKey].(string)
+			} else {
+				workflow.GetLogger(ctx).Error("emit_signal: _iter is not map[string]any", "actual_type", fmt.Sprintf("%T", iterVal))
+			}
+		} else {
+			workflow.GetLogger(ctx).Error("emit_signal: _iter key not found in workflow variables")
+		}
+
+		if parentWorkflowID != "" {
+			msg := BroadcastMessage{
+				SenderBranchID: branchID,
+				SignalName:     signalName,
+				Payload:        payload,
+			}
+			// Non-blocking fire-and-forget external signal delivery up to parent instance
+			_ = workflow.SignalExternalWorkflow(ctx, parentWorkflowID, "", ChildBroadcastSignalName, msg)
+		}
+
+	default:
+		nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ActivityID:          nodeInfo.ID,
+			StartToCloseTimeout: 24 * time.Hour * 365,
+		})
+
+		err = workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, inputs).Get(ctx, &result)
+		if err != nil {
+			return err
+		}
+
+		err = g.mapTaskOutputs(g.instance.WorkflowVariables, node.OutputMapping, result)
+		if err != nil {
+			return err
+		}
 	}
 
 	nodeInfo.Status = NodeStatusCompleted
@@ -419,7 +470,8 @@ func (g *graphInterpreter) handleSplitTaskNode(ctx workflow.Context, nodeInfo *N
 
 		// Configure targeted isolation environment parameters for child execution workspace
 		childVars := map[string]any{
-			VarSplitNodeID: node.ID,
+			VarParentWorkflowID: parentInfo.WorkflowExecution.ID,
+			VarSplitNodeID:      node.ID,
 			iterKey: map[string]any{
 				IterIndexKey:    i,
 				IterBranchIDKey: branchID,
@@ -439,7 +491,21 @@ func (g *graphInterpreter) handleSplitTaskNode(ctx workflow.Context, nodeInfo *N
 	}
 
 	// 3. Initialize the Interactive Event Multiplexor Selector
+	broadcastChan := workflow.GetSignalChannel(ctx, ChildBroadcastSignalName)
 	selector := workflow.NewSelector(ctx)
+
+	// Handler Type A: Listen for Upstream Child Broadcast signals and multicast them out
+	selector.AddReceive(broadcastChan, func(c workflow.ReceiveChannel, more bool) {
+		var msg BroadcastMessage
+		c.Receive(ctx, &msg)
+
+		// Broadcast packet down into active sibling tracking channels (omitting source generator)
+		for targetChildID := range activeBranches {
+			if !strings.HasSuffix(targetChildID, "-"+msg.SenderBranchID) {
+				_ = workflow.SignalExternalWorkflow(ctx, targetChildID, "", msg.SignalName, msg.Payload)
+			}
+		}
+	})
 
 	completedCount := 0
 	totalBranches := len(activeBranches)
