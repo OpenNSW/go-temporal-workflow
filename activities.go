@@ -47,6 +47,7 @@ func (a *Activities) ExecuteTaskActivity(ctx context.Context, taskTemplateID str
 	return res, nil
 }
 
+// WorkflowCompletedActivity is a Temporal activity that executes when a workflow completes successfully.
 func (a *Activities) WorkflowCompletedActivity(_ context.Context, workflowID string, finalContext map[string]any) error {
 	return a.WorkflowCompletedActivityHandler(workflowID, finalContext)
 }
