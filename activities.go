@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"go.temporal.io/sdk/activity"
@@ -21,6 +22,18 @@ type Activities struct {
 	// an End node. It receives the workflow ID and the final accumulated workflow variables, allowing the
 	// host application to run any necessary completion triggers, notify listeners, or persist final state.
 	WorkflowCompletedActivityHandler func(string, map[string]any) error
+
+	// FetchWorkflowDefinitionHandler is invoked to dynamically retrieve the workflow definition structure
+	// for a given template ID during SPLIT_TASK execution.
+	FetchWorkflowDefinitionHandler func(templateID string) (WorkflowDefinition, error)
+}
+
+// FetchWorkflowDefinitionActivity is a Temporal activity that retrieves the workflow definition for a template ID.
+func (a *Activities) FetchWorkflowDefinitionActivity(_ context.Context, templateID string) (WorkflowDefinition, error) {
+	if a.FetchWorkflowDefinitionHandler == nil {
+		return WorkflowDefinition{}, fmt.Errorf("FetchWorkflowDefinitionHandler is not initialized on Activities wrapper")
+	}
+	return a.FetchWorkflowDefinitionHandler(templateID)
 }
 
 // ExecuteTaskActivity pushes the task to your application and sleeps waiting for it or completes synchronously
