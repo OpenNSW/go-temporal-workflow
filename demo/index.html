@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temporal Workflow Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f0a1c 0%, #150f2e 100%);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.06);
+            --glass-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            
+            --color-primary: #8b5cf6;
+            --color-primary-glow: rgba(139, 92, 246, 0.4);
+            --color-cyan: #06b6d4;
+            --color-cyan-glow: rgba(6, 182, 212, 0.4);
+            --color-success: #10b981;
+            --color-success-glow: rgba(16, 185, 129, 0.4);
+            --color-error: #ef4444;
+            --color-error-glow: rgba(239, 68, 68, 0.4);
+            --color-pending: #64748b;
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background: rgba(15, 10, 28, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+            z-index: 10;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-title h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, #a78bfa, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .connection-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--color-success);
+            background: rgba(16, 185, 129, 0.1);
+            padding: 4px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .connection-badge .dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--color-success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--color-success);
+            animation: pulse-dot 1.8s infinite;
+        }
+
+        .btn {
+            background: linear-gradient(to right, var(--color-primary), #6366f1);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px var(--color-primary-glow);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1.5px solid var(--glass-border) !important;
+            color: var(--text-main) !important;
+            box-shadow: none !important;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.05) !important;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            flex-grow: 1;
+            height: calc(100vh - 81px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: rgba(15, 10, 28, 0.3);
+            border-right: 1px solid var(--glass-border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .instance-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .instance-item {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .instance-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .instance-item.active {
+            border-color: var(--color-primary);
+            background: rgba(139, 92, 246, 0.08);
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.1);
+        }
+
+        .instance-id {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-main);
+        }
+
+        .instance-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Workspace Grid */
+        .workspace {
+            display: grid;
+            grid-template-rows: 1fr 340px;
+            overflow: hidden;
+        }
+
+        /* Flow Visualizer */
+        .flow-container {
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 30px;
+            background: radial-gradient(circle at center, rgba(139, 92, 246, 0.03) 0%, transparent 70%);
+        }
+
+        .flow-section-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 1100px;
+            box-shadow: var(--glass-glow);
+            backdrop-filter: blur(16px);
+        }
+
+        .flow-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 3px solid var(--color-primary);
+            padding-left: 10px;
+        }
+
+        /* Node Layouts */
+        .nodes-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-evenly;
+            position: relative;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .subflows-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .subflow-column {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px dashed rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .subflow-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-align: center;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .node {
+            background: rgba(15, 10, 28, 0.6);
+            border: 1.5px solid var(--color-pending);
+            border-radius: 10px;
+            padding: 14px 20px;
+            min-width: 120px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .node .label {
+            color: var(--text-main);
+        }
+
+        .node .status-text {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        /* Node States styling */
+        .node.completed {
+            border-color: var(--color-success);
+            background: rgba(16, 185, 129, 0.08);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+        }
+        .node.completed .status-text {
+            color: var(--color-success);
+        }
+
+        .node.running {
+            border-color: var(--color-cyan);
+            background: rgba(6, 182, 212, 0.08);
+            box-shadow: 0 0 15px var(--color-cyan-glow);
+            animation: pulse-border 1.5s infinite alternate;
+        }
+        .node.running .status-text {
+            color: var(--color-cyan);
+            font-weight: bold;
+        }
+
+        .node.not_started {
+            opacity: 0.4;
+            border-color: var(--glass-border);
+        }
+
+        .node.awaiting {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.08);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
+            animation: pulse-border-amber 1.5s infinite alternate;
+        }
+        .node.awaiting .status-text {
+            color: #f59e0b;
+            font-weight: bold;
+        }
+
+        /* Human Interaction Panel */
+        .interaction-panel {
+            background: rgba(15, 10, 28, 0.75);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid var(--glass-border);
+            padding: 24px 24px 36px 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .tasks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 15px;
+            align-items: start;
+        }
+
+        .task-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-cyan);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: slide-in 0.3s ease-out;
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--color-cyan);
+        }
+
+        .task-wf-id {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .form-control {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 6px;
+            padding: 10px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-control:focus {
+            border-color: var(--color-cyan);
+        }
+
+        .task-btn {
+            background: var(--color-cyan);
+            color: #0f0a1c;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 5px;
+        }
+
+        .task-btn:hover {
+            background: #22d3ee;
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+        }
+
+        .empty-tasks {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 120px;
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            border: 1px dashed rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Animations */
+        @keyframes pulse-dot {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 4px rgba(6, 182, 212, 0.2); }
+            100% { box-shadow: 0 0 16px rgba(6, 182, 212, 0.5); }
+        }
+
+        @keyframes pulse-border-amber {
+            0% { box-shadow: 0 0 4px rgba(245, 158, 11, 0.2); }
+            100% { box-shadow: 0 0 16px rgba(245, 158, 11, 0.5); }
+        }
+
+        @keyframes slide-in {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>Consignment Workflow Dashboard</h1>
+            <div class="connection-badge">
+                <div class="dot"></div>
+                <span>TEMPORAL PORT 7233 CONNECTED</span>
+            </div>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="btn btn-secondary" onclick="refreshAll()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                Refresh Dashboard
+            </button>
+            <button class="btn" onclick="startWorkflow()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Start New Consignment
+            </button>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2 class="section-title">Consignment Executions</h2>
+            <div class="instance-list" id="workflow-list">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <!-- Workspace Grid -->
+        <div class="workspace">
+            <!-- Flow Visualizer -->
+            <div class="flow-container" id="flow-container">
+                <div class="empty-tasks" style="width:100%; max-width: 600px; margin: auto;" id="no-wf-selected">
+                    Select or Start a Consignment Execution to track progress
+                </div>
+
+                <div id="flow-content" style="display: none; width: 100%; display: flex; flex-direction: column; gap: 30px; align-items: center;">
+                    <!-- Main flow card -->
+                    <div class="flow-section-card">
+                        <div class="flow-title">Parent Consignment Flow</div>
+                        <div class="nodes-row">
+                            <div class="node" id="node-start">
+                                <span class="label">Start Node</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-pick_cha">
+                                <span class="label">Pick CHA</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-pick_hs_codes">
+                                <span class="label">Pick HS Codes</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-split_task">
+                                <span class="label">SplitTask Boundary</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-confirm_consignment">
+                                <span class="label">Confirm Consignment</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-end">
+                                <span class="label">End Node</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Subflows columns -->
+                    <div class="subflows-container">
+                        <!-- Customs sub-flow -->
+                        <div class="subflow-column" id="col-customs">
+                            <div class="subflow-title">Customs Sub-flow</div>
+                            <div class="node" id="node-cusdec">
+                                <span class="label">CUSDEC</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-warrenting">
+                                <span class="label">Warrenting</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-payment">
+                                <span class="label">Payment</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-cdn_submission">
+                                <span class="label">CDN Submission</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-cdn_ack">
+                                <span class="label">CDN Ack</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-boat_note">
+                                <span class="label">Boat Note</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-export_release">
+                                <span class="label">Export Release</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                        </div>
+
+                        <!-- Phyto sub-flow -->
+                        <div class="subflow-column" id="col-phyto">
+                            <div class="subflow-title">Phytosanitary Sub-flow</div>
+                            <div class="node" id="node-phyto_app">
+                                <span class="label">Application</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-phyto_pay">
+                                <span class="label">Payment</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-phyto_issue">
+                                <span class="label">Issue Cert</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                        </div>
+
+                        <!-- Health sub-flow -->
+                        <div class="subflow-column" id="col-health">
+                            <div class="subflow-title">Health Cert Sub-flow</div>
+                            <div class="node" id="node-health_app">
+                                <span class="label">Application</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-health_pay">
+                                <span class="label">Payment</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                            <div class="node" id="node-health_issue">
+                                <span class="label">Issue Cert</span>
+                                <span class="status-text">Not Started</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Human Interaction Panel -->
+            <div class="interaction-panel">
+                <h2 class="section-title">Active Human Tasks</h2>
+                <div class="tasks-grid" id="tasks-list">
+                    <div class="empty-tasks">No active tasks awaiting inputs</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedWorkflowId = null;
+        let lastWorkflowsState = '';
+        let lastPendingTasksJson = '';
+
+        // Refresh all list, status, and pending tasks
+        function refreshAll() {
+            fetchWorkflows();
+            fetchPendingTasks();
+            if (selectedWorkflowId) {
+                fetchWorkflowStatus(selectedWorkflowId);
+            }
+        }
+
+        // Fetch workflow list and pending tasks on load
+        window.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+        });
+
+        function fetchWorkflows() {
+            fetch('/api/workflow/list')
+                .then(res => res.json())
+                .then(data => {
+                    const currentState = JSON.stringify({ workflows: data, selected: selectedWorkflowId });
+                    if (currentState === lastWorkflowsState) {
+                        return;
+                    }
+                    lastWorkflowsState = currentState;
+
+                    const listContainer = document.getElementById('workflow-list');
+                    if (data.length === 0) {
+                        listContainer.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem;">No active flows</div>';
+                        return;
+                    }
+
+                    let html = '';
+                    data.forEach(id => {
+                        const activeClass = id === selectedWorkflowId ? 'active' : '';
+                        html += `
+                            <div class="instance-item ${activeClass}" onclick="selectWorkflow('${id}')">
+                                <span class="instance-id">${id}</span>
+                                <span class="instance-time">Started recently</span>
+                            </div>
+                        `;
+                    });
+                    listContainer.innerHTML = html;
+                })
+                .catch(err => console.error('Error fetching workflows:', err));
+        }
+
+        function selectWorkflow(id) {
+            selectedWorkflowId = id;
+            document.getElementById('no-wf-selected').style.display = 'none';
+            document.getElementById('flow-content').style.display = 'flex';
+            
+            // Re-render highlight elements immediately
+            refreshAll();
+        }
+
+        function startWorkflow() {
+            // Force redraw on explicit action
+            lastWorkflowsState = '';
+            lastPendingTasksJson = '';
+
+            fetch('/api/workflow/start', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    selectWorkflow(data.workflowId);
+                    // Since Temporal starts workflows asynchronously, trigger delayed refreshes to capture state shifts
+                    setTimeout(refreshAll, 500);
+                    setTimeout(refreshAll, 1200);
+                })
+                .catch(err => console.error('Error starting workflow:', err));
+        }
+
+        function fetchWorkflowStatus(workflowId) {
+            fetch(`/api/workflow/status?id=${workflowId}`)
+                .then(res => res.json())
+                .then(data => {
+                    // Update parent nodes
+                    updateNodeUI('start', data.parent);
+                    updateNodeUI('pick_cha', data.parent);
+                    updateNodeUI('pick_hs_codes', data.parent);
+                    updateNodeUI('split_task', data.parent);
+                    updateNodeUI('confirm_consignment', data.parent);
+                    updateNodeUI('end', data.parent);
+
+                    // Check active branches from workflow variables
+                    let activeBranches = [];
+                    if (data.parent && data.parent.workflow_variables && data.parent.workflow_variables.split_items) {
+                        activeBranches = data.parent.workflow_variables.split_items.map(item => item.branch_id);
+                    }
+
+                    // If pick_hs_codes task is completed, we fade out skipped columns and mark their nodes as Skipped.
+                    // Otherwise, we keep them all active and visible (Not Started status).
+                    const pickHSCodesState = data.parent && data.parent.node_states && data.parent.node_states['pick_hs_codes'];
+                    const isHSCodeCompleted = pickHSCodesState && pickHSCodesState.status === 'COMPLETED';
+
+                    updateColumnUI('customs', isHSCodeCompleted ? activeBranches.includes('customs') : true);
+                    updateColumnUI('phyto', isHSCodeCompleted ? activeBranches.includes('phyto') : true);
+                    updateColumnUI('health', isHSCodeCompleted ? activeBranches.includes('health') : true);
+
+                    // Update Customs nodes
+                    const customsData = data.children ? data.children.customs : null;
+                    updateNodeUI('cusdec', customsData);
+                    updateNodeUI('warrenting', customsData);
+                    updateNodeUI('payment', customsData);
+                    updateNodeUI('cdn_submission', customsData);
+                    updateNodeUI('cdn_ack', customsData);
+                    updateNodeUI('boat_note', customsData);
+                    updateNodeUI('export_release', customsData);
+
+                    // Update Phyto nodes
+                    const phytoData = data.children ? data.children.phyto : null;
+                    updateNodeUI('phyto_app', phytoData);
+                    updateNodeUI('phyto_pay', phytoData);
+                    
+                    const isPhytoWaiting = phytoData && phytoData.node_states && phytoData.node_states['phyto_wait_cdn'] && phytoData.node_states['phyto_wait_cdn'].status === 'RUNNING';
+                    if (isPhytoWaiting) {
+                        const issueNode = document.getElementById('node-phyto_issue');
+                        if (issueNode) {
+                            issueNode.className = 'node awaiting';
+                            issueNode.querySelector('.status-text').textContent = 'Awaiting Customs CDN';
+                        }
+                    } else {
+                        updateNodeUI('phyto_issue', phytoData);
+                    }
+ 
+                    // Update Health nodes
+                    const healthData = data.children ? data.children.health : null;
+                    updateNodeUI('health_app', healthData);
+                    updateNodeUI('health_pay', healthData);
+                    
+                    const isHealthWaiting = healthData && healthData.node_states && healthData.node_states['health_wait_cdn'] && healthData.node_states['health_wait_cdn'].status === 'RUNNING';
+                    if (isHealthWaiting) {
+                        const issueNode = document.getElementById('node-health_issue');
+                        if (issueNode) {
+                            issueNode.className = 'node awaiting';
+                            issueNode.querySelector('.status-text').textContent = 'Awaiting Customs CDN';
+                        }
+                    } else {
+                        updateNodeUI('health_issue', healthData);
+                    }
+                })
+                .catch(err => console.error('Error fetching status:', err));
+        }
+
+        function updateColumnUI(branchId, isActive) {
+            const colEl = document.getElementById(`col-${branchId}`);
+            if (!colEl) return;
+
+            if (isActive) {
+                colEl.style.opacity = '1';
+                colEl.style.filter = 'none';
+                colEl.style.pointerEvents = 'auto';
+                colEl.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+            } else {
+                colEl.style.opacity = '0.2';
+                colEl.style.filter = 'grayscale(1) blur(0.5px)';
+                colEl.style.pointerEvents = 'none';
+                colEl.style.borderColor = 'transparent';
+                
+                // Set all nodes inside the inactive column to 'Skipped' status UI-wise
+                const nodes = colEl.querySelectorAll('.node');
+                nodes.forEach(nodeEl => {
+                    nodeEl.className = 'node not_started';
+                    nodeEl.querySelector('.status-text').textContent = 'Skipped';
+                });
+            }
+        }
+
+        function updateNodeUI(nodeId, workflowInstance) {
+            const nodeEl = document.getElementById(`node-${nodeId}`);
+            if (!nodeEl) return;
+
+            // Check if this node is inside a faded column
+            const parentColumn = nodeEl.closest('.subflow-column');
+            if (parentColumn && parentColumn.style.opacity === '0.2') {
+                nodeEl.className = 'node not_started';
+                nodeEl.querySelector('.status-text').textContent = 'Skipped';
+                return;
+            }
+
+            if (!workflowInstance || !workflowInstance.node_states || !workflowInstance.node_states[nodeId]) {
+                nodeEl.className = 'node not_started';
+                nodeEl.querySelector('.status-text').textContent = 'Not Started';
+                return;
+            }
+
+            const state = workflowInstance.node_states[nodeId];
+            nodeEl.className = `node ${state.status.toLowerCase()}`;
+            nodeEl.querySelector('.status-text').textContent = state.status;
+        }
+
+        function fetchPendingTasks() {
+            fetch('/api/tasks/pending')
+                .then(res => res.json())
+                .then(data => {
+                    const currentJson = JSON.stringify(data);
+                    if (currentJson === lastPendingTasksJson) {
+                        return;
+                    }
+                    lastPendingTasksJson = currentJson;
+
+                    const listContainer = document.getElementById('tasks-list');
+                    if (data.length === 0) {
+                        listContainer.innerHTML = '<div class="empty-tasks">No active tasks awaiting inputs</div>';
+                        return;
+                    }
+
+                    let html = '';
+                    data.forEach(task => {
+                        html += `
+                            <div class="task-card">
+                                <div class="task-header">
+                                    <span class="task-name">${formatTaskName(task.taskTemplateId)}</span>
+                                    <span class="task-wf-id">${task.workflowId}</span>
+                                </div>
+                                ${generateTaskInputFields(task)}
+                                <button class="task-btn" onclick="completeTask('${task.workflowId}', '${task.runId}', '${task.nodeId}', '${task.taskTemplateId}')">
+                                    Submit & Complete Task
+                                </button>
+                            </div>
+                        `;
+                    });
+                    listContainer.innerHTML = html;
+                })
+                .catch(err => console.error('Error fetching pending tasks:', err));
+        }
+
+        function formatTaskName(id) {
+            return id.replace(/_/g, ' ').toUpperCase();
+        }
+
+        function generateTaskInputFields(task) {
+            const template = task.taskTemplateId;
+            let fieldHtml = '';
+
+            switch (template) {
+                case 'pick_cha':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>CHA Company Name</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-cha_name" class="form-control" value="Swift Logistics Partners Ltd" placeholder="Enter CHA Name" />
+                        </div>
+                    `;
+                    break;
+                case 'pick_hs_codes':
+                    fieldHtml = `
+                        <div class="form-group" style="gap: 10px;">
+                            <label style="margin-bottom: 4px; font-weight: bold; color: var(--color-cyan);">Select HS Codes (determine required clearances):</label>
+                            
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; color: var(--text-main); padding: 4px 0;">
+                                <input type="checkbox" id="input-${task.workflowId}-${task.nodeId}-hs-food" value="HS-FOOD" checked style="accent-color: var(--color-cyan); width: 16px; height: 16px; cursor: pointer;" />
+                                <span><strong>HS-FOOD</strong> (Requires Customs + Health Certificate)</span>
+                            </label>
+
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; color: var(--text-main); padding: 4px 0;">
+                                <input type="checkbox" id="input-${task.workflowId}-${task.nodeId}-hs-plant" value="HS-PLANT" style="accent-color: var(--color-cyan); width: 16px; height: 16px; cursor: pointer;" />
+                                <span><strong>HS-PLANT</strong> (Requires Customs + Phytosanitary Certificate)</span>
+                            </label>
+                            <span id="hs-error-${task.workflowId}-${task.nodeId}" style="color: #ef4444; font-size: 0.75rem; display: none; margin-top: 4px; font-weight: bold;">⚠️ Please select at least one HS Code</span>
+                        </div>
+                    `;
+                    break;
+                case 'cusdec':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Customs Declaration (CUSDEC) Status</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-cusdec_status" class="form-control" value="APPROVED" placeholder="Enter Status" />
+                        </div>
+                    `;
+                    break;
+                case 'warrenting':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Warranting Status</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-warrant_status" class="form-control" value="WARRANT_ISSUED" placeholder="Enter Status" />
+                        </div>
+                    `;
+                    break;
+                case 'payment':
+                case 'phyto_pay':
+                case 'health_pay':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Payment Receipt Confirmation</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-payment_status" class="form-control" value="PAID_TX_9877112" placeholder="Enter Status" />
+                        </div>
+                    `;
+                    break;
+                case 'cdn_submission':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>CDN Submission State</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-cdn_submitted" class="form-control" value="SUBMITTED_SUCCESSFULLY" />
+                        </div>
+                    `;
+                    break;
+                case 'cdn_ack':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>CDN Acknowledgement Code</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-cdn_acknowledged" class="form-control" value="ACK_CODE_88192" />
+                        </div>
+                    `;
+                    break;
+                case 'boat_note':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Generated Boat Note Reference</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-boat_note_id" class="form-control" value="BN-LOG-7761" />
+                        </div>
+                    `;
+                    break;
+                case 'export_release':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Customs Export Release Code</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-release_status" class="form-control" value="RELEASED_AND_CLEARED" />
+                        </div>
+                    `;
+                    break;
+                case 'phyto_app':
+                case 'health_app':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Certificate Application State</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-app_status" class="form-control" value="PENDING_INSPECTION" />
+                        </div>
+                    `;
+                    break;
+                case 'phyto_issue':
+                case 'health_issue':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Official Certificate Number</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-cert_number" class="form-control" value="CERT-REP-${Math.floor(100000 + Math.random() * 900000)}" />
+                        </div>
+                    `;
+                    break;
+                case 'confirm_consignment':
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Final Consignment Confirmation Status</label>
+                            <input type="text" id="input-${task.workflowId}-${task.nodeId}-confirmation_status" class="form-control" value="COMPLETED_AND_SHIPPED" />
+                        </div>
+                    `;
+                    break;
+                default:
+                    fieldHtml = `
+                        <div class="form-group">
+                            <label>Task Outputs (JSON)</label>
+                            <textarea id="input-${task.workflowId}-${task.nodeId}-generic" class="form-control" rows="3">{"status":"OK"}</textarea>
+                        </div>
+                    `;
+            }
+            return fieldHtml;
+        }
+
+        function completeTask(workflowId, runId, nodeId, template) {
+            let outputMap = {};
+
+            switch (template) {
+                case 'pick_cha':
+                    outputMap['cha_name'] = document.getElementById(`input-${workflowId}-${nodeId}-cha_name`).value;
+                    break;
+                case 'pick_hs_codes':
+                    const foodChecked = document.getElementById(`input-${workflowId}-${nodeId}-hs-food`).checked;
+                    const plantChecked = document.getElementById(`input-${workflowId}-${nodeId}-hs-plant`).checked;
+                    
+                    if (!foodChecked && !plantChecked) {
+                        document.getElementById(`hs-error-${workflowId}-${nodeId}`).style.display = 'block';
+                        return;
+                    }
+                    
+                    const selectedCodes = [];
+                    if (foodChecked) selectedCodes.push('HS-FOOD');
+                    if (plantChecked) selectedCodes.push('HS-PLANT');
+                    
+                    outputMap['hs_codes'] = selectedCodes;
+                    break;
+                case 'cusdec':
+                    outputMap['cusdec_status'] = document.getElementById(`input-${workflowId}-${nodeId}-cusdec_status`).value;
+                    break;
+                case 'warrenting':
+                    outputMap['warrant_status'] = document.getElementById(`input-${workflowId}-${nodeId}-warrant_status`).value;
+                    break;
+                case 'payment':
+                case 'phyto_pay':
+                case 'health_pay':
+                    outputMap['payment_status'] = document.getElementById(`input-${workflowId}-${nodeId}-payment_status`).value;
+                    break;
+                case 'cdn_submission':
+                    outputMap['cdn_submitted'] = document.getElementById(`input-${workflowId}-${nodeId}-cdn_submitted`).value;
+                    break;
+                case 'cdn_ack':
+                    outputMap['cdn_acknowledged'] = document.getElementById(`input-${workflowId}-${nodeId}-cdn_acknowledged`).value;
+                    break;
+                case 'boat_note':
+                    outputMap['boat_note_id'] = document.getElementById(`input-${workflowId}-${nodeId}-boat_note_id`).value;
+                    break;
+                case 'export_release':
+                    outputMap['release_status'] = document.getElementById(`input-${workflowId}-${nodeId}-release_status`).value;
+                    break;
+                case 'phyto_app':
+                case 'health_app':
+                    outputMap['app_status'] = document.getElementById(`input-${workflowId}-${nodeId}-app_status`).value;
+                    break;
+                case 'phyto_issue':
+                case 'health_issue':
+                    outputMap['cert_number'] = document.getElementById(`input-${workflowId}-${nodeId}-cert_number`).value;
+                    break;
+                case 'confirm_consignment':
+                    outputMap['confirmation_status'] = document.getElementById(`input-${workflowId}-${nodeId}-confirmation_status`).value;
+                    break;
+                default:
+                    try {
+                        const txt = document.getElementById(`input-${workflowId}-${nodeId}-generic`).value;
+                        outputMap = JSON.parse(txt);
+                    } catch (e) {
+                        alert('Invalid JSON input: ' + e);
+                        return;
+                    }
+            }
+
+            // Force redraw on explicit action
+            lastWorkflowsState = '';
+            lastPendingTasksJson = '';
+
+            fetch('/api/tasks/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    workflowId: workflowId,
+                    runId: runId,
+                    nodeId: nodeId,
+                    payload: outputMap
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                refreshAll();
+                // Since Temporal transitions are asynchronous, trigger delayed refreshes to capture next steps automatically
+                setTimeout(refreshAll, 600);
+                setTimeout(refreshAll, 1200);
+            })
+            .catch(err => console.error('Error completing task:', err));
+        }
+    </script>
+</body>
+</html>
