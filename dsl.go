@@ -30,14 +30,16 @@ const (
 	FailureModeCollectAll FailureMode = "COLLECT_ALL"
 )
 
+// SplitTaskItem defines the structure for individual branch items inside the items collection.
+type SplitTaskItem struct {
+	TemplateID string         `json:"template_id"`
+	BranchID   string         `json:"branch_id"`
+	Payload    map[string]any `json:"payload"`
+}
+
 // Core structural execution constants
 const (
-	DefaultIterationKey = "_iter"
-
-	// Keys parsed from the input items collection
-	ItemTemplateIDKey = "template_id"
-	ItemBranchIDKey   = "branch_id"
-	ItemPayloadKey    = "payload"
+	DefaultIterationKey      = "_iter"
 
 	// Keys injected into the child's workspace variables
 	VarSplitNodeID      = "_split_node_id"

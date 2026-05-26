@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -251,4 +252,116 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithSameTemplateMode() {
 	results, ok := resultState.WorkflowVariables["results"].([]any)
 	s.True(ok)
 	s.Len(results, 2)
+}
+
+
+func (s *NSWEngineTestSuite) TestDynamicFanOutWithCollectAllFailures() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Register activities
+	acts := &Activities{}
+	env.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
+	env.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
+	env.RegisterActivityWithOptions(acts.FetchWorkflowDefinitionActivity, activity.RegisterOptions{Name: "FetchWorkflowDefinitionActivity"})
+
+	// Define simple child workflow definition that will fail
+	childDef := WorkflowDefinition{
+		ID: "failing_child_workflow",
+		Nodes: []Node{
+			{ID: "c_start", Type: NodeTypeStart},
+			{
+				ID:             "c_task",
+				Type:           NodeTypeTask,
+				TaskTemplateID: "fail_task",
+			},
+			{ID: "c_end", Type: NodeTypeEnd},
+		},
+		Edges: []Edge{
+			{ID: "ce1", SourceID: "c_start", TargetID: "c_task"},
+			{ID: "ce2", SourceID: "c_task", TargetID: "c_end"},
+		},
+	}
+
+	// Define the Master Workflow Definition using COLLECT_ALL failure mode
+	masterDef := WorkflowDefinition{
+		ID: "master_collect_all_workflow",
+		Nodes: []Node{
+			{ID: "m_start", Type: NodeTypeStart},
+			{
+				ID:             "m_fanout",
+				Type:           NodeTypeSplitTask,
+				TaskTemplateID: "failing_child_workflow",
+				SplitTask: &SplitTaskConfig{
+					Mode:            SplitModeSameTemplate,
+					ItemsVariable:   "items",
+					ResultsVariable: "results",
+					FailureMode:     FailureModeCollectAll,
+				},
+			},
+			{ID: "m_end", Type: NodeTypeEnd},
+		},
+		Edges: []Edge{
+			{ID: "me1", SourceID: "m_start", TargetID: "m_fanout"},
+			{ID: "me2", SourceID: "m_fanout", TargetID: "m_end"},
+		},
+	}
+
+	// Mock Definition Hydration Activity Provider
+	env.OnActivity("FetchWorkflowDefinitionActivity", mock.Anything, "failing_child_workflow").Return(childDef, nil)
+
+	// Mock Task Activity to fail
+	env.OnActivity("ExecuteTaskActivity", mock.Anything, "fail_task", mock.Anything).Return(nil, errors.New("task failed intentionally"))
+
+	// Register nested sub-workflow runtime interpreter engine
+	env.RegisterWorkflowWithOptions(GraphInterpreterWorkflow, workflow.RegisterOptions{Name: "GraphInterpreterWorkflow"})
+
+	initialVars := map[string]any{
+		"items": []map[string]any{
+			{
+				"branch_id": "branch-1",
+				"payload":   map[string]any{},
+			},
+			{
+				"branch_id": "branch-2",
+				"payload":   map[string]any{},
+			},
+		},
+	}
+
+	// Execute Test Execution
+	env.ExecuteWorkflow(GraphInterpreterWorkflow, masterDef, initialVars)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	s.Contains(err.Error(), "multiple branches failed")
+	s.Contains(err.Error(), "branch-1-0 halted abnormally")
+	s.Contains(err.Error(), "branch-2-1 halted abnormally")
+
+	var resultState WorkflowInstance
+	err = env.GetWorkflowResult(&resultState)
+	s.Error(err) // Result retrieval fails because workflow failed
+
+	// Retrieve status query directly from the workflow state mock to inspect variables
+	val, queryErr := env.QueryWorkflow("GetStatus")
+	s.NoError(queryErr)
+	var instance WorkflowInstance
+	s.NoError(val.Get(&instance))
+
+	// Validate error state details are captured inside the results array on parent scope variables
+	s.Contains(instance.WorkflowVariables, "results")
+	results, ok := instance.WorkflowVariables["results"].([]any)
+	s.True(ok)
+	s.Len(results, 2)
+
+	// Check that we captured the branch IDs and error messages correctly
+	branch1Result, ok1 := results[0].(map[string]any)
+	s.True(ok1)
+	s.Equal("branch-1-0", branch1Result["branch_id"])
+	s.Contains(branch1Result["error"], "task failed intentionally")
+
+	branch2Result, ok2 := results[1].(map[string]any)
+	s.True(ok2)
+	s.Equal("branch-2-1", branch2Result["branch_id"])
+	s.Contains(branch2Result["error"], "task failed intentionally")
 }
