@@ -39,7 +39,7 @@ graph TD
 
 ## DSL Specification (`dsl.go`)
 
-Workflows are defined through the [WorkflowDefinition](file:///Users/nayana/Work/go-temporal-workflow/dsl.go#L76-L94) structure.
+Workflows are defined through the [WorkflowDefinition](https://github.com/OpenNSW/go-temporal-workflow/blob/main/dsl.go) structure.
 
 ### Node Config Definition
 ```go
