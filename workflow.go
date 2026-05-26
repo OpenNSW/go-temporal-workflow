@@ -357,5 +357,3 @@ func (g *graphInterpreter) handleGatewayNode(ctx workflow.Context, nodeInfo *Nod
 		return fmt.Errorf("unknown gateway type: %v", node.GatewayType)
 	}
 }
-
-

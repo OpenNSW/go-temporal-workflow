@@ -39,7 +39,7 @@ type SplitTaskItem struct {
 
 // Core structural execution constants
 const (
-	DefaultIterationKey      = "_iter"
+	DefaultIterationKey = "_iter"
 
 	// Keys injected into the child's workspace variables
 	VarSplitNodeID      = "_split_node_id"

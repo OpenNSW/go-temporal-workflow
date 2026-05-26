@@ -254,7 +254,6 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithSameTemplateMode() {
 	s.Len(results, 2)
 }
 
-
 func (s *NSWEngineTestSuite) TestDynamicFanOutWithCollectAllFailures() {
 	env := s.NewTestWorkflowEnvironment()
 
