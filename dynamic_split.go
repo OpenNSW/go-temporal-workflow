@@ -95,6 +95,18 @@ func (g *graphInterpreter) spawnChildWorkflows(
 	activeBranches := make(map[string]*activeBranch)
 	branchIDs := make(map[string]bool)
 
+	type preparedBranch struct {
+		TemplateID string
+		BranchID   string
+		Payload    map[string]any
+		Index      int
+	}
+
+	prepared := make([]preparedBranch, len(branchesData))
+	uniqueTemplates := make([]string, 0)
+	seenTemplates := make(map[string]bool)
+
+	// 1. Validate branch IDs and collect unique template IDs
 	for i, itemRaw := range branchesData {
 		item, err := ParseSplitTaskItem(itemRaw)
 		if err != nil {
@@ -109,7 +121,6 @@ func (g *graphInterpreter) spawnChildWorkflows(
 		if config.Mode == SplitModeSameTemplate {
 			branchID = fmt.Sprintf("%s-%d", branchID, i)
 		}
-		payload := item.Payload
 
 		if templateID == "" || branchID == "" {
 			return nil, fmt.Errorf("index point %d requires non-empty template_id (static or dynamic) and branch_id configurations", i)
@@ -120,43 +131,74 @@ func (g *graphInterpreter) spawnChildWorkflows(
 		}
 		branchIDs[branchID] = true
 
-		// Execute Activity on-the-fly to retrieve sub-graph definition
-		// TODO: Execute FetchWorkflowDefinitionActivity calls in parallel (potentially with a batch size limit) to avoid
-		// sequential IO bottlenecks on larger datasets.
-		var branchGraphDef WorkflowDefinition
-		err = workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: 15 * time.Second,
-		}), "FetchWorkflowDefinitionActivity", templateID).Get(ctx, &branchGraphDef)
-		if err != nil {
-			return nil, fmt.Errorf("boundary lifecycle error hydrating definition graph for template %s: %w", templateID, err)
+		prepared[i] = preparedBranch{
+			TemplateID: templateID,
+			BranchID:   branchID,
+			Payload:    item.Payload,
+			Index:      i,
 		}
 
-		// Configure targeted isolation environment parameters for child execution workspace
+		if !seenTemplates[templateID] {
+			seenTemplates[templateID] = true
+			uniqueTemplates = append(uniqueTemplates, templateID)
+		}
+	}
+
+	// 2. Fetch unique template definitions in batches in parallel
+	const batchSize = 10
+	defsMap := make(map[string]WorkflowDefinition)
+
+	for i := 0; i < len(uniqueTemplates); i += batchSize {
+		end := i + batchSize
+		if end > len(uniqueTemplates) {
+			end = len(uniqueTemplates)
+		}
+		batch := uniqueTemplates[i:end]
+
+		futures := make([]workflow.Future, len(batch))
+		for idx, templateID := range batch {
+			futures[idx] = workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				StartToCloseTimeout: 15 * time.Second,
+			}), "FetchWorkflowDefinitionActivity", templateID)
+		}
+
+		for idx, templateID := range batch {
+			var branchGraphDef WorkflowDefinition
+			if err := futures[idx].Get(ctx, &branchGraphDef); err != nil {
+				return nil, fmt.Errorf("boundary lifecycle error hydrating definition graph for template %s: %w", templateID, err)
+			}
+			defsMap[templateID] = branchGraphDef
+		}
+	}
+
+	// 3. Spawn child workflow interpreters
+	for _, p := range prepared {
+		branchGraphDef := defsMap[p.TemplateID]
+
 		childVars := map[string]any{
 			VarParentWorkflowID: parentInfo.WorkflowExecution.ID,
 			VarSplitNodeID:      node.ID,
 			iterKey: map[string]any{
-				IterIndexKey:    i,
-				IterBranchIDKey: branchID,
-				IterInputKey:    payload,
+				IterIndexKey:    p.Index,
+				IterBranchIDKey: p.BranchID,
+				IterInputKey:    p.Payload,
 			},
 		}
 
-		deterministicChildID := FormatChildWorkflowID(parentInfo.WorkflowExecution.ID, node.ID, branchID)
+		deterministicChildID := FormatChildWorkflowID(parentInfo.WorkflowExecution.ID, node.ID, p.BranchID)
 		childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 			WorkflowID: deterministicChildID,
 		})
 
-		// Recursively spin up core interpreter executing target hydrated sub-graph schema
 		future := workflow.ExecuteChildWorkflow(childCtx, "GraphInterpreterWorkflow", branchGraphDef, childVars)
 		activeBranches[deterministicChildID] = &activeBranch{
 			Future:   future,
-			BranchID: branchID,
-			Index:    i,
+			BranchID: p.BranchID,
+			Index:    p.Index,
 		}
 	}
 
-	// Wait for all child workflows to start to ensure their execution environments (and signal handlers) are initialized
+	// Wait for all child workflows to start to ensure execution environments are initialized
 	for targetChildID, info := range activeBranches {
 		var childExec workflow.Execution
 		if err := info.Future.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
