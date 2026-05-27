@@ -112,5 +112,3 @@ func ParseSplitTaskItem(itemRaw any) (SplitTaskItem, error) {
 
 	return item, nil
 }
-
-
