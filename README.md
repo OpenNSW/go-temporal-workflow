@@ -88,26 +88,25 @@ To run the engine inside a Go application, bind your handler logic to the `Activ
 ```go
 import "github.com/OpenNSW/go-temporal-workflow"
 
-// Define custom activity handlers
-activities := &engine.Activities{
-    ExecuteTaskActivityHandler: func(payload engine.TaskPayload) (map[string]any, error) {
-        // Implement task execution (sync or async)
-        return map[string]any{"status": "success"}, nil
-    },
-    FetchWorkflowDefinitionHandler: func(templateID string) (engine.WorkflowDefinition, error) {
-        // Retrieve definition JSON from database or local files
-        return loadDefinition(templateID), nil
-    },
-    WorkflowCompletedActivityHandler: func(workflowID string, vars map[string]any) error {
-        // Perform cleanup or dispatch completion events
-        return nil
-    },
-}
+// Initialize the TemporalManager (this automatically registers the workflow and activities internally)
+manager := engine.NewTemporalManager(
+    temporalClient,
+    "your-task-queue",
+    taskHandler,       // TaskActivationHandler
+    completionHandler, // WorkflowCompletionHandler
+)
 
-// Register workflow and activities on worker
-w := worker.New(temporalClient, "your-task-queue", worker.Options{})
-w.RegisterWorkflow(engine.InterpreterWorkflow)
-w.RegisterActivity(activities)
+// Register sub-workflow definition loader (required if using SPLIT_TASK nodes)
+manager.RegisterDefinitionHandler(func(templateID string) (engine.WorkflowDefinition, error) {
+    // Retrieve definition from database or local files
+    return loadDefinition(templateID), nil
+})
+
+// Start the internal worker to begin execution
+err := manager.StartWorker()
+if err != nil {
+    log.Fatalf("Failed to start worker: %v", err)
+}
 ```
 
 ## Running Tests
