@@ -172,6 +172,8 @@ func (g *graphInterpreter) executeNode(ctx workflow.Context, nodeID string) erro
 		err = g.handleTaskNode(ctx, nodeInfo, node, outEdges)
 	case NodeTypeGateway:
 		err = g.handleGatewayNode(ctx, nodeInfo, node, outEdges)
+	case NodeTypeSplitTask:
+		err = g.handleSplitTaskNode(ctx, nodeInfo, node, outEdges)
 	case NodeTypeEnd:
 		err = g.handleEndNode(ctx, nodeInfo)
 	default:
@@ -247,17 +249,18 @@ func (g *graphInterpreter) mapTaskOutputs(workflowVars map[string]any, outputMap
 }
 
 func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeInfo, node *Node, outEdges []Edge) error {
-	nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ActivityID:          nodeInfo.ID,
-		StartToCloseTimeout: 24 * time.Hour * 365,
-	})
-
 	inputs, err := g.mapTaskInputs(node.InputMapping)
 	if err != nil {
 		return err
 	}
 
 	var result map[string]any
+
+	nodeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ActivityID:          nodeInfo.ID,
+		StartToCloseTimeout: 24 * time.Hour * 365,
+	})
+
 	err = workflow.ExecuteActivity(nodeCtx, "ExecuteTaskActivity", node.TaskTemplateID, inputs).Get(ctx, &result)
 	if err != nil {
 		return err
