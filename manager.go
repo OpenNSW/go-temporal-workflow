@@ -137,6 +137,9 @@ type Manager interface {
 type TemporalManager interface {
 	Manager
 
+	// RegisterDefinitionHandler registers the handler function for fetching sub-workflow definitions.
+	RegisterDefinitionHandler(handler func(templateID string) (WorkflowDefinition, error))
+
 	// StartWorker connects the internal Temporal Worker to the Temporal Server and
 	// begins polling the task queue for workflow and activity tasks.
 	StartWorker() error
@@ -150,6 +153,7 @@ type temporalManagerImpl struct {
 	temporalClient client.Client
 	worker         worker.Worker
 	taskQueue      string
+	activities     *Activities
 }
 
 // NewTemporalManager creates a new instance of TemporalManager.
@@ -157,8 +161,7 @@ func NewTemporalManager(
 	c client.Client,
 	taskQueue string,
 	taskHandler TaskActivationHandler,
-	completionHandler WorkflowCompletionHandler,
-	definitionHandler func(templateID string) (WorkflowDefinition, error)) TemporalManager {
+	completionHandler WorkflowCompletionHandler) TemporalManager {
 	if strings.TrimSpace(taskQueue) == "" {
 		panic("taskQueue must not be empty")
 	}
@@ -175,14 +178,18 @@ func NewTemporalManager(
 	acts := &Activities{
 		ExecuteTaskActivityHandler:       taskHandler,
 		WorkflowCompletedActivityHandler: completionHandler,
-		FetchWorkflowDefinitionHandler:   definitionHandler,
 	}
 	w.RegisterActivityWithOptions(acts.ExecuteTaskActivity, activity.RegisterOptions{Name: "ExecuteTaskActivity"})
 	w.RegisterActivityWithOptions(acts.WorkflowCompletedActivity, activity.RegisterOptions{Name: "WorkflowCompletedActivity"})
 	w.RegisterActivityWithOptions(acts.FetchWorkflowDefinitionActivity, activity.RegisterOptions{Name: "FetchWorkflowDefinitionActivity"})
 
 	m.worker = w
+	m.activities = acts
 	return m
+}
+
+func (m *temporalManagerImpl) RegisterDefinitionHandler(handler func(templateID string) (WorkflowDefinition, error)) {
+	m.activities.FetchWorkflowDefinitionHandler = handler
 }
 
 func (m *temporalManagerImpl) StartWorkflow(ctx context.Context, ID string, def WorkflowDefinition, initialWorkflowVariables map[string]any) error {
