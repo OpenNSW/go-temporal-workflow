@@ -7,7 +7,7 @@ A powerful, JSON-DSL-driven graph interpreter engine built on top of the Go [Tem
 - **DSL-Driven DAG Execution**: Runs workflows represented by structured nodes and conditional edges.
 - **Multiple Node Types**:
   - **`START` / `END`**: Standard execution entry and exit points.
-  - **`TASK`**: Executes application activities. Supports synchronous/asynchronous work execution.
+  - **`TASK`**: Executes application activities. Supports synchronous/asynchronous work execution, and specialized system tasks (`sys:emit_signal`, `sys:wait_for_signal`).
   - **`GATEWAY`**: Controls logical branching and joining (`EXCLUSIVE_SPLIT`, `PARALLEL_SPLIT`, `EXCLUSIVE_JOIN`, `PARALLEL_JOIN`).
   - **`SPLIT_TASK`**: Spawns multiple parallel child workflows dynamically (dynamic fan-out). Supports:
     - `SAME_TEMPLATE`: Homogeneous splits running the same template across payloads.
@@ -24,8 +24,8 @@ A powerful, JSON-DSL-driven graph interpreter engine built on top of the Go [Tem
 graph TD
     Start([Start Node]) --> Task1[Task Node]
     Task1 --> Gate1{Gateway: Split}
-    Gate1 -->|Condition A| TaskA[Task A]
-    Gate1 -->|Condition B| TaskB[Task B]
+    Gate1 -->|Condition A| TaskA[sys:wait_for_signal]
+    Gate1 -->|Condition B| TaskB[sys:emit_signal]
     TaskA --> Gate2{Gateway: Join}
     TaskB --> Gate2
     Gate2 --> Split1[Split Task Node]
@@ -67,32 +67,47 @@ type SplitTaskConfig struct {
 
 ---
 
+## System Task Templates
+
+### 1. `sys:emit_signal`
+Emits an asynchronous signal from a child workflow to the parent brokerage system.
+* **Requirements**: Must provide the `signal_name` and `payload` via `InputMapping`.
+* **Execution**: Passes messages through the parent broker using the `"child_broadcast_signal"` channel. Safe for standalone execution (gracefully ignores signaling if no parent workflow ID is registered).
+
+### 2. `sys:wait_for_signal`
+Blocks workflow execution until a signal matching the specified channel name is received.
+* **Requirements**: Must map the target `signal_name` in `InputMapping`.
+* **Execution**: Dynamically subscribes to the named channel on Temporal and processes the payload back into the workflow variables dictionary using its `OutputMapping`.
+
+---
+
 ## Integration Setup
 
-To run the engine inside a Go application, initialize the `TemporalManager` with your task and completion handlers:
+To run the engine inside a Go application, bind your handler logic to the `Activities` registry struct:
 
 ```go
 import "github.com/OpenNSW/go-temporal-workflow"
 
-// Initialize the TemporalManager (this automatically registers the workflow and activities internally)
-manager := engine.NewTemporalManager(
-    temporalClient,
-    "your-task-queue",
-    taskHandler,       // TaskActivationHandler
-    completionHandler, // WorkflowCompletionHandler
-)
-
-// Register sub-workflow definition loader (required if using SPLIT_TASK nodes)
-manager.RegisterDefinitionHandler(func(templateID string) (engine.WorkflowDefinition, error) {
-    // Retrieve definition from database or local files
-    return loadDefinition(templateID), nil
-})
-
-// Start the internal worker to begin execution
-err := manager.StartWorker()
-if err != nil {
-    log.Fatalf("Failed to start worker: %v", err)
+// Define custom activity handlers
+activities := &engine.Activities{
+    ExecuteTaskActivityHandler: func(payload engine.TaskPayload) (map[string]any, error) {
+        // Implement task execution (sync or async)
+        return map[string]any{"status": "success"}, nil
+    },
+    FetchWorkflowDefinitionHandler: func(templateID string) (engine.WorkflowDefinition, error) {
+        // Retrieve definition JSON from database or local files
+        return loadDefinition(templateID), nil
+    },
+    WorkflowCompletedActivityHandler: func(workflowID string, vars map[string]any) error {
+        // Perform cleanup or dispatch completion events
+        return nil
+    },
 }
+
+// Register workflow and activities on worker
+w := worker.New(temporalClient, "your-task-queue", worker.Options{})
+w.RegisterWorkflow(engine.InterpreterWorkflow)
+w.RegisterActivity(activities)
 ```
 
 ## Running Tests

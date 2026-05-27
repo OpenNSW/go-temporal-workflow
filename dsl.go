@@ -39,7 +39,8 @@ type SplitTaskItem struct {
 
 // Core structural execution constants
 const (
-	DefaultIterationKey = "_iter"
+	DefaultIterationKey      = "_iter"
+	ChildBroadcastSignalName = "child_broadcast_signal"
 
 	// Keys injected into the child's workspace variables
 	VarSplitNodeID      = "_split_node_id"
@@ -49,7 +50,22 @@ const (
 	IterIndexKey    = "index"
 	IterBranchIDKey = "branch_id"
 	IterInputKey    = "input"
+
+	// System task template IDs
+	SysTaskWaitForSignal = "sys:wait_for_signal"
+	SysTaskEmitSignal    = "sys:emit_signal"
+
+	// Input keys for system tasks
+	InputSignalName = "signal_name"
+	InputPayload    = "payload"
 )
+
+// BroadcastMessage defines a unified Message Wrapper for parent brokerage.
+type BroadcastMessage struct {
+	SenderBranchID string         `json:"sender_branch_id"`
+	SignalName     string         `json:"signal_name"`
+	Payload        map[string]any `json:"payload"`
+}
 
 // SplitTaskConfig defines dynamic fan-out execution configuration.
 type SplitTaskConfig struct {
