@@ -278,7 +278,10 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithCrossBranchBroadcast() {
 				ID:             "p_emit",
 				Type:           NodeTypeTask,
 				TaskTemplateID: SysTaskEmitSignal,
-				InputMapping:   map[string]string{"custom_iter.input.signal_to_emit": InputSignalName},
+				InputMapping: map[string]string{
+					"custom_iter.input.signal_to_emit": InputSignalName,
+					"phyto_status":                     "payload.phyto_status",
+				},
 			},
 			{ID: "p_end", Type: NodeTypeEnd},
 		},
@@ -393,8 +396,13 @@ func (s *NSWEngineTestSuite) TestDynamicFanOutWithCrossBranchBroadcast() {
 	// Assert overall execution status
 	s.Equal(StatusCompleted, resultState.Status)
 
-	// Validate variable extraction aggregation results exist back on parent payload scope
-	s.Contains(resultState.WorkflowVariables, "consolidated_oga_results")
+	// Validate that phyto_status was propagated via cross-branch signal into the health branch result
+	results, ok := resultState.WorkflowVariables["consolidated_oga_results"].([]any)
+	s.True(ok, "consolidated_oga_results should be []any")
+	s.Len(results, 2)
+	healthResult, ok := results[1].(map[string]any)
+	s.True(ok, "health branch result should be map[string]any")
+	s.Equal("APPROVED_CLEAN", healthResult["phyto_status"])
 }
 
 func (s *NSWEngineTestSuite) TestDynamicFanOutWithCollectAllFailures() {

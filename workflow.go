@@ -282,12 +282,11 @@ func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeIn
 
 		parentWorkflowID, _ := g.instance.WorkflowVariables[VarParentWorkflowID].(string)
 
-		branchID, _ := g.instance.WorkflowVariables[VarBranchID].(string)
-		if branchID == "" {
-			workflow.GetLogger(ctx).Error("emit_signal: _branch_id not set in workflow variables")
-		}
-
 		if parentWorkflowID != "" {
+			branchID, _ := g.instance.WorkflowVariables[VarBranchID].(string)
+			if branchID == "" {
+				workflow.GetLogger(ctx).Warn("emit_signal: _branch_id not set; signal will be unfiltered")
+			}
 			msg := BroadcastMessage{
 				SenderBranchID: branchID,
 				SignalName:     signalName,
