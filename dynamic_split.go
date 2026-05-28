@@ -283,6 +283,14 @@ func (g *graphInterpreter) monitorChildWorkflows(
 
 		if executionError != nil && config.FailureMode == FailureModeFailFast {
 			nodeInfo.Status = NodeStatusFailed
+			remaining := make([]string, 0, len(activeBranches))
+			for childID := range activeBranches {
+				remaining = append(remaining, childID)
+			}
+			sort.Strings(remaining)
+			for _, childID := range remaining {
+				_ = workflow.RequestCancelExternalWorkflow(ctx, childID, "")
+			}
 			return executionError
 		}
 	}
