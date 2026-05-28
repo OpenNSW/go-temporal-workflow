@@ -284,19 +284,7 @@ func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeIn
 
 		branchID, _ := g.instance.WorkflowVariables[VarBranchID].(string)
 		if branchID == "" {
-			// Fallback: search dynamically for the iteration map containing the branch_id
-			for _, val := range g.instance.WorkflowVariables {
-				if m, ok := val.(map[string]any); ok {
-					if bID, exists := m[IterBranchIDKey].(string); exists {
-						branchID = bID
-						break
-					}
-				}
-			}
-		}
-
-		if branchID == "" {
-			workflow.GetLogger(ctx).Error("emit_signal: branch_id not found in workflow variables")
+			workflow.GetLogger(ctx).Error("emit_signal: _branch_id not set in workflow variables")
 		}
 
 		if parentWorkflowID != "" {

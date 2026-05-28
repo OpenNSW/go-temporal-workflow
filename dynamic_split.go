@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -200,11 +201,13 @@ func (g *graphInterpreter) spawnChildWorkflows(
 		}
 	}
 
-	// Wait for all child workflows to start to ensure their execution environments (and signal handlers) are initialized
-	for targetChildID, info := range activeBranches {
+	// Wait for all child workflows to start to ensure their execution environments (and signal handlers) are initialized.
+	// Iterate prepared (insertion order) rather than the map to guarantee deterministic replay.
+	for _, p := range prepared {
+		childID := FormatChildWorkflowID(parentInfo.WorkflowExecution.ID, node.ID, p.BranchID)
 		var childExec workflow.Execution
-		if err := info.Future.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
-			return nil, fmt.Errorf("failed to start child workflow %s: %w", targetChildID, err)
+		if err := activeBranches[childID].Future.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
+			return nil, fmt.Errorf("failed to start child workflow %s: %w", childID, err)
 		}
 	}
 
@@ -228,9 +231,16 @@ func (g *graphInterpreter) monitorChildWorkflows(
 		var msg BroadcastMessage
 		c.Receive(ctx, &msg)
 
-		// Broadcast packet down into active sibling tracking channels (omitting source generator)
-		for targetChildID, info := range activeBranches {
-			if info.BranchID != msg.SenderBranchID {
+		// Broadcast packet down into active sibling tracking channels (omitting source generator).
+		// Sort child IDs before iterating so SignalExternalWorkflow commands are scheduled in
+		// deterministic order on both the original run and replay.
+		childIDs := make([]string, 0, len(activeBranches))
+		for childID := range activeBranches {
+			childIDs = append(childIDs, childID)
+		}
+		sort.Strings(childIDs)
+		for _, targetChildID := range childIDs {
+			if activeBranches[targetChildID].BranchID != msg.SenderBranchID {
 				_ = workflow.SignalExternalWorkflow(ctx, targetChildID, "", msg.SignalName, msg.Payload)
 			}
 		}
