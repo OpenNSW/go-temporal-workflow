@@ -45,6 +45,7 @@ const (
 	// Keys injected into the child's workspace variables
 	VarSplitNodeID      = "_split_node_id"
 	VarParentWorkflowID = "_parent_workflow_id"
+	VarBranchID         = "_branch_id"
 
 	// Iteration context sub-keys
 	IterIndexKey    = "index"

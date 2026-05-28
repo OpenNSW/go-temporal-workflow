@@ -178,6 +178,7 @@ func (g *graphInterpreter) spawnChildWorkflows(
 		childVars := map[string]any{
 			VarParentWorkflowID: parentInfo.WorkflowExecution.ID,
 			VarSplitNodeID:      node.ID,
+			VarBranchID:         p.BranchID,
 			iterKey: map[string]any{
 				IterIndexKey:    p.Index,
 				IterBranchIDKey: p.BranchID,
