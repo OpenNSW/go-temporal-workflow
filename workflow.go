@@ -293,7 +293,12 @@ func (g *graphInterpreter) handleTaskNode(ctx workflow.Context, nodeInfo *NodeIn
 				Payload:        payload,
 			}
 			// Non-blocking fire-and-forget external signal delivery up to parent instance
-			_ = workflow.SignalExternalWorkflow(ctx, parentWorkflowID, "", ChildBroadcastSignalName, msg)
+			future := workflow.SignalExternalWorkflow(ctx, parentWorkflowID, "", ChildBroadcastSignalName, msg)
+			workflow.Go(ctx, func(ctx workflow.Context) {
+				if err := future.Get(ctx, nil); err != nil {
+					workflow.GetLogger(ctx).Error("emit_signal: failed to send signal to parent", "error", err)
+				}
+			})
 		}
 
 	default:
